@@ -9,6 +9,30 @@ fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let xgb_root = env::current_dir().unwrap().join("xgboost");
 
+    // Check if the xgboost directory exists
+    if !xgb_root.exists() {
+        println!("cargo:warning=XGBoost submodule not found. Attempting to initialize it automatically...");
+        
+        // Try to initialize the git submodule
+        let git_result = Command::new("git")
+            .args(&["submodule", "update", "--init", "--recursive"])
+            .status();
+            
+        match git_result {
+            Ok(status) if status.success() => {
+                println!("cargo:warning=Successfully initialized XGBoost submodule.");
+            },
+            _ => {
+                panic!("Failed to initialize XGBoost submodule. Please run 'git submodule update --init --recursive' manually.");
+            }
+        }
+        
+        // Verify the directory now exists
+        if !xgb_root.exists() {
+            panic!("XGBoost directory still not found after submodule initialization. Please check your git configuration.");
+        }
+    }
+
     // Print the current version of XGBoost that we're using
     println!("cargo:warning=Building with XGBoost 3.0.0");
 

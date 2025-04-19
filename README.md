@@ -1,8 +1,21 @@
-Bindings to the xgboost library.
+# XGBoost Rust Bindings
+
+Rust bindings for the [XGBoost](https://github.com/dmlc/xgboost) gradient boosting library.
+
+## Installation
+
+This crate provides Rust bindings for the XGBoost C API.
+
+Building this crate will automatically build XGBoost from source and initialize the git submodules if needed. The following dependencies are required:
+
+- A C++ compiler (g++, clang, or MSVC)
+- CMake (3.14 or higher)
+- OpenMP (optional but recommended)
+- Git (for automatic submodule initialization)
+
+> Note: If the automatic initialization fails, you may need to run `git submodule update --init --recursive` manually.
 
 Currently supported version: [v3.0.0](https://github.com/dmlc/xgboost/releases/tag/v3.0.0)
-
-> **Note**: This library is a work in progress and breaking changes may occur in future updates.
 
 ## Important Note for macOS Users
 
