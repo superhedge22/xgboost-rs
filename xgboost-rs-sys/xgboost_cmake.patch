@@ -1,0 +1,11 @@
+--- CMakeLists.txt  2023-09-26 09:38:10.000000000 -0000
++++ CMakeLists.txt.new      2023-09-26 09:38:10.000000000 -0000
+@@ -358,6 +358,8 @@
+ if(BUILD_STATIC_LIB)
+   add_library(xgboost STATIC $<TARGET_OBJECTS:objxgboost>)
+   set_output_directory(xgboost \${xgboost_SOURCE_DIR}/lib)
++  install(TARGETS xgboost DESTINATION lib)
++  install(TARGETS dmlc DESTINATION lib)
+ else()
+   # Build a shared library cooperating with CUDA compilers
+   if(USE_CUDA OR USE_HIP) 

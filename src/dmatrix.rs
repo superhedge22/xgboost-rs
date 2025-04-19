@@ -1,8 +1,8 @@
 use libc::{c_float, c_uint};
 use log::info;
-use std::convert::TryInto;
 use std::os::unix::ffi::OsStrExt;
 use std::{ffi, path::Path, ptr, slice};
+use serde_json::json;
 
 use crate::{XGBError, XGBResult};
 
@@ -134,18 +134,61 @@ impl DMatrix {
     ) -> XGBResult<Self> {
         assert_eq!(indices.len(), data.len());
         let mut handle = ptr::null_mut();
-        let indptr: Vec<u64> = indptr.iter().map(|x| *x as u64).collect();
-        let indices: Vec<u32> = indices.iter().map(|x| *x as u32).collect();
+        
+        // Convert vectors to the correct types
+        let indptr_vec: Vec<u64> = indptr.iter().map(|x| *x as u64).collect();
+        let indices_vec: Vec<u32> = indices.iter().map(|x| *x as u32).collect();
         let num_cols = num_cols.unwrap_or(0); // infer from data if 0
-        xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromCSREx(
-            indptr.as_ptr(),
-            indices.as_ptr(),
-            data.as_ptr(),
-            indptr.len().try_into().unwrap(),
-            data.len().try_into().unwrap(),
-            num_cols.try_into().unwrap(),
+        
+        // Get pointers for passing to C API
+        let indptr_ptr = indptr_vec.as_ptr() as usize;
+        let indices_ptr = indices_vec.as_ptr() as usize;
+        let data_ptr = data.as_ptr() as usize;
+        
+        // Create array interfaces for indptr, indices and data
+        let indptr_config = json!({
+            "data": [indptr_ptr, false],
+            "typestr": "<u8",
+            "shape": [indptr_vec.len()],
+            "version": 3
+        });
+        let indptr_str = indptr_config.to_string();
+        
+        let indices_config = json!({
+            "data": [indices_ptr, false],
+            "typestr": "<u4",
+            "shape": [indices_vec.len()],
+            "version": 3
+        });
+        let indices_str = indices_config.to_string();
+        
+        let data_config = json!({
+            "data": [data_ptr, false],
+            "typestr": "<f4", 
+            "shape": [data.len()],
+            "version": 3
+        });
+        let data_str = data_config.to_string();
+        
+        // Create the CSR configuration with required params
+        let csr_config = format!(
+            "{{\"missing\": 0.0, \"nthread\": 0}}"
+        );
+        
+        let indptr_cstr = ffi::CString::new(indptr_str).unwrap();
+        let indices_cstr = ffi::CString::new(indices_str).unwrap();
+        let data_cstr = ffi::CString::new(data_str).unwrap();
+        let csr_config_cstr = ffi::CString::new(csr_config).unwrap();
+        
+        xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromCSR(
+            indptr_cstr.as_ptr(),
+            indices_cstr.as_ptr(),
+            data_cstr.as_ptr(),
+            num_cols as xgboost_rs_sys::bst_ulong,
+            csr_config_cstr.as_ptr(),
             &mut handle
         ))?;
+        
         Ok(DMatrix::new(handle).unwrap())
     }
 
@@ -169,18 +212,61 @@ impl DMatrix {
     ) -> XGBResult<Self> {
         assert_eq!(indices.len(), data.len());
         let mut handle = ptr::null_mut();
-        let indptr: Vec<u64> = indptr.iter().map(|x| *x as u64).collect();
-        let indices: Vec<u32> = indices.iter().map(|x| *x as u32).collect();
+        
+        // Convert vectors to the correct types
+        let indptr_vec: Vec<u64> = indptr.iter().map(|x| *x as u64).collect();
+        let indices_vec: Vec<u32> = indices.iter().map(|x| *x as u32).collect();
         let num_rows = num_rows.unwrap_or(0); // infer from data if 0
-        xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromCSCEx(
-            indptr.as_ptr(),
-            indices.as_ptr(),
-            data.as_ptr(),
-            indptr.len().try_into().unwrap(),
-            data.len().try_into().unwrap(),
-            num_rows.try_into().unwrap(),
+        
+        // Get pointers for passing to C API
+        let indptr_ptr = indptr_vec.as_ptr() as usize;
+        let indices_ptr = indices_vec.as_ptr() as usize;
+        let data_ptr = data.as_ptr() as usize;
+        
+        // Create array interfaces for indptr, indices and data
+        let indptr_config = json!({
+            "data": [indptr_ptr, false],
+            "typestr": "<u8",
+            "shape": [indptr_vec.len()],
+            "version": 3
+        });
+        let indptr_str = indptr_config.to_string();
+        
+        let indices_config = json!({
+            "data": [indices_ptr, false],
+            "typestr": "<u4",
+            "shape": [indices_vec.len()],
+            "version": 3
+        });
+        let indices_str = indices_config.to_string();
+        
+        let data_config = json!({
+            "data": [data_ptr, false],
+            "typestr": "<f4", 
+            "shape": [data.len()],
+            "version": 3
+        });
+        let data_str = data_config.to_string();
+        
+        // Create the CSC configuration with required params
+        let csc_config = format!(
+            "{{\"missing\": 0.0, \"nthread\": 0}}"
+        );
+        
+        let indptr_cstr = ffi::CString::new(indptr_str).unwrap();
+        let indices_cstr = ffi::CString::new(indices_str).unwrap();
+        let data_cstr = ffi::CString::new(data_str).unwrap();
+        let csc_config_cstr = ffi::CString::new(csc_config).unwrap();
+        
+        xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromCSC(
+            indptr_cstr.as_ptr(),
+            indices_cstr.as_ptr(),
+            data_cstr.as_ptr(),
+            num_rows as xgboost_rs_sys::bst_ulong,
+            csc_config_cstr.as_ptr(),
             &mut handle
         ))?;
+        
         Ok(DMatrix::new(handle).unwrap())
     }
 
@@ -212,14 +298,19 @@ impl DMatrix {
     /// Will panic, if the matrix creation fails with an error not coming from `XGBoost`.
     pub fn load<P: AsRef<Path>>(path: P) -> XGBResult<Self> {
         let path_as_string = path.as_ref().display().to_string();
-        let path_as_bytes = Path::new(&path_as_string).as_os_str().as_bytes();
-
+        
         let mut handle = ptr::null_mut();
-        let path_cstr = ffi::CString::new(path_as_bytes).unwrap();
-        let silent = true;
-        xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromFile(
-            path_cstr.as_ptr(),
-            i32::from(silent),
+        let silent = 1; // 1 for silent, 0 for not silent
+        
+        let config = json!({
+            "uri": path_as_string.replace("\\", "\\\\"),
+            "silent": silent
+        });
+        
+        
+        let config_cstr = ffi::CString::new(config.to_string()).unwrap();
+        xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromURI(
+            config_cstr.as_ptr(),
             &mut handle
         ))?;
         Ok(DMatrix::new(handle).unwrap())
@@ -334,16 +425,35 @@ impl DMatrix {
             &mut out_dptr
         ))?;
 
+        // In XGBoost 3.0.0, when there is no info, out_dptr might be null even with out_len = 0
+        if out_dptr.is_null() || out_len == 0 {
+            // Return an empty slice when no data is available
+            return Ok(&[]);
+        }
+
         Ok(unsafe { slice::from_raw_parts(out_dptr as *mut c_float, out_len as usize) })
     }
 
     fn set_float_info(&mut self, field: &str, array: &[f32]) -> XGBResult<()> {
         let field = ffi::CString::new(field).unwrap();
-        xgb_call!(xgboost_rs_sys::XGDMatrixSetFloatInfo(
+        
+        // Get pointer for passing to C API
+        let data_ptr = array.as_ptr() as usize;
+        
+        // Create array interface JSON for float data
+        let array_config = json!({
+            "data": [data_ptr, false],
+            "typestr": "<f4",
+            "shape": [array.len()],
+            "version": 3
+        });
+        let array_str = array_config.to_string();
+        let array_cstr = ffi::CString::new(array_str).unwrap();
+        
+        xgb_call!(xgboost_rs_sys::XGDMatrixSetInfoFromInterface(
             self.handle,
             field.as_ptr(),
-            array.as_ptr(),
-            array.len() as u64
+            array_cstr.as_ptr()
         ))
     }
 
@@ -357,16 +467,36 @@ impl DMatrix {
             &mut out_len,
             &mut out_dptr
         ))?;
+        
+        // In XGBoost 3.0.0, when there is no info, out_dptr might be null even with out_len = 0
+        if out_dptr.is_null() || out_len == 0 {
+            // Return an empty slice when no data is available
+            return Ok(&[]);
+        }
+        
         Ok(unsafe { slice::from_raw_parts(out_dptr as *mut c_uint, out_len as usize) })
     }
 
     fn set_uint_info(&mut self, field: &str, array: &[u32]) -> XGBResult<()> {
         let field = ffi::CString::new(field).unwrap();
-        xgb_call!(xgboost_rs_sys::XGDMatrixSetUIntInfo(
+        
+        // Get pointer for passing to C API
+        let data_ptr = array.as_ptr() as usize;
+        
+        // Create array interface JSON for uint data
+        let array_config = json!({
+            "data": [data_ptr, false],
+            "typestr": "<u4",
+            "shape": [array.len()],
+            "version": 3
+        });
+        let array_str = array_config.to_string();
+        let array_cstr = ffi::CString::new(array_str).unwrap();
+        
+        xgb_call!(xgboost_rs_sys::XGDMatrixSetInfoFromInterface(
             self.handle,
             field.as_ptr(),
-            array.as_ptr(),
-            array.len() as u64
+            array_cstr.as_ptr()
         ))
     }
 }
@@ -382,27 +512,30 @@ mod tests {
     use super::*;
 
     fn read_train_matrix() -> XGBResult<DMatrix> {
-        let data_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
-        DMatrix::load(format!("{data_path}/data.csv?format=csv"))
+        // Use env! to locate the file relative to the project root
+        // This works in any build environment, including when running tests
+        let data_path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data");
+        // Specify that column index 5 (6th column, "Class_ID") is the label column in the CSV file
+        DMatrix::load(format!("{data_path}/data.csv?format=csv&label_column=5"))
     }
 
     #[test]
-    fn read_matrix() {
+    fn test_read_matrix() {
         assert!(read_train_matrix().is_ok());
     }
 
     #[test]
-    fn read_num_rows() {
+    fn test_read_num_rows() {
         assert_eq!(read_train_matrix().unwrap().num_rows(), 23946);
     }
 
     #[test]
-    fn read_num_cols() {
-        assert_eq!(read_train_matrix().unwrap().num_cols(), 6);
+    fn test_read_num_cols() {
+        assert_eq!(read_train_matrix().unwrap().num_cols(), 5);
     }
 
     #[test]
-    fn writing_and_reading() {
+    fn test_writing_and_reading() {
         let dmat = read_train_matrix().unwrap();
 
         let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -417,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn get_set_labels() {
+    fn test_get_set_labels() {
         let mut dmat = read_train_matrix().unwrap();
         assert_eq!(dmat.get_labels().unwrap().len(), 23946);
         let labels = vec![0.0; dmat.get_labels().unwrap().len()];
@@ -426,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn get_set_weights() {
+    fn test_get_set_weights() {
         let error_margin = f32::EPSILON;
         let mut dmat = read_train_matrix().unwrap();
         let empty_weights: Vec<f32> = vec![];
@@ -444,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn get_set_base_margin() {
+    fn test_get_set_base_margin() {
         let mut dmat = read_train_matrix().unwrap();
         let empty_slice: Vec<f32> = vec![];
         assert_eq!(dmat.get_base_margin().unwrap(), empty_slice.as_slice());
@@ -454,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn get_set_group() {
+    fn test_get_set_group() {
         let mut dmat = read_train_matrix().unwrap();
         let empty_slice: Vec<u32> = vec![];
         assert_eq!(dmat.get_group().unwrap(), empty_slice.as_slice());
@@ -465,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn from_csr() {
+    fn test_from_csr() {
         let indptr = [0, 2, 3, 6, 8];
         let indices = [0, 2, 2, 0, 1, 2, 1, 2];
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
@@ -480,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn from_csc() {
+    fn test_from_csc() {
         let indptr = [0, 2, 3, 6, 8];
         let indices = [0, 2, 2, 0, 1, 2, 1, 2];
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
@@ -495,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn from_dense() {
+    fn test_from_dense() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let num_rows = 2;
 
@@ -512,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn slice_from_indices() {
+    fn test_slice_from_indices() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let num_rows = 4;
 
@@ -527,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn slice() {
+    fn test_slice() {
         let data = vec![
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ];

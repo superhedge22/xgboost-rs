@@ -1,9 +1,45 @@
 Bindings to the xgboost library.
 
-Currently supported version: [v1.6.2](https://github.com/dmlc/xgboost/tree/v1.6.2)
+Currently supported version: [v3.0.0](https://github.com/dmlc/xgboost/releases/tag/v3.0.0)
+
+> **Note**: This library is a work in progress and breaking changes may occur in future updates.
+
+## Important Note for macOS Users
+
+With the upgrade to XGBoost 3.0.0, **OpenMP is now required** for proper operation on macOS. **Xcode** is also required for development on macOS.
+
+Quick setup for macOS:
+```bash
+# Check if brew is installed and install OpenMP
+if command -v brew &> /dev/null; then
+    brew install libomp
+else
+    echo "Homebrew not found. Please install it from https://brew.sh/ and then run 'brew install libomp'"
+    # Or you can use the script in xgboost-rs-sys
+    # cd xgboost-rs-sys && ./install_deps.sh
+fi
+
+# When running tests, you may need to set these environment variables
+export LIBRARY_PATH="$(brew --prefix libomp)/lib:$LIBRARY_PATH"
+export DYLD_LIBRARY_PATH="$(brew --prefix libomp)/lib:$DYLD_LIBRARY_PATH"
+```
+
+See the [xgboost-rs-sys README](xgboost-rs-sys/README.md) for more detailed instructions.
 
 ## Dependencies
 - See [Build XGBoost from Source](https://xgboost.readthedocs.io/en/stable/build.html#building-from-source)
 - CMake 3.14 or higher
 - A recent C++ compiler supporting C++11 (g++-5.0 or higher)
 - libclang
+- OpenMP library (required for macOS with XGBoost 3.0.0)
+- Xcode (required for macOS)
+
+## Supported Platforms
+
+This library has been tested and should work on the following platforms:
+- macOS with Intel processors
+- macOS with Apple Silicon (M1/M2/M3)
+- Linux AMD64 (x86_64)
+- Linux ARM64
+
+For platform-specific build instructions, see the [xgboost-rs-sys README](xgboost-rs-sys/README.md).
