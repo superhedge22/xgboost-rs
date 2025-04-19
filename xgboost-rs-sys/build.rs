@@ -21,13 +21,17 @@ fn main() {
             });
     }
 
-    // CMake
+    // Print the current version of XGBoost that we're using
+    println!("cargo:warning=Building with XGBoost 3.0.0");
+
+    // CMake configuration
     let dst = Config::new(&xgb_root)
-        .uses_cxx11()
         .define("BUILD_STATIC_LIB", "ON")
+        .define("USE_OPENMP", "ON")
+        .define("BUILD_SHARED_LIBS", "OFF")
         .build();
 
-    // CONFIG BINDGEN
+    // Generate bindings
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .clang_args(&["-x", "c++", "-std=c++11"])
@@ -41,15 +45,16 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings.");
 
-    // GENERATE THE BINDINGS
-
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings.");
 
+    // Configure the linker
     println!("cargo:rustc-link-search={}", dst.join("lib").display());
-    println!("cargo:rustc-link-lib=xgboost");
-    println!("cargo:rustc-link-lib=dmlc");
+    
+    // Try with static libraries first
+    println!("cargo:rustc-link-lib=static=xgboost");
+    println!("cargo:rustc-link-lib=static=dmlc");
 
     if target.contains("apple") {
         println!("cargo:rustc-link-lib=dylib=c++");
@@ -58,4 +63,8 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=stdc++");
         println!("cargo:rustc-link-lib=dylib=gomp");
     }
+    
+    // Force rustc to re-run this build script if the xgboost checkout changes
+    println!("cargo:rerun-if-changed=xgboost");
+    println!("cargo:rerun-if-changed=wrapper.h");
 }

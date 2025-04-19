@@ -15,7 +15,7 @@ use_serde = ["serde"]
 
 [dependencies]
 libc = "0.2"
-xgboost-rs-sys = { path = "xgboost-rs-sys", version = "0.1" }
+xgboost-rs-sys = { path = "xgboost-rs-sys", version = "0.2" }
 derive_builder = "0.11"
 indexmap = "1.9"
 tempfile = "3.1"
@@ -25,7 +25,7 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 
 
 [build-dependencies]
-xgboost-rs-sys = { path = "xgboost-rs-sys", version = "0.1" }
+xgboost-rs-sys = { path = "xgboost-rs-sys", version = "0.2" }
 
 
 [workspace]

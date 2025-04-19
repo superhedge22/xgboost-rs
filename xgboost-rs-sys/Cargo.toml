@@ -1,6 +1,6 @@
 [package]
 name = "xgboost-rs-sys"
-version = "0.1.31"
+version = "0.2.0"
 links = "xgboost"
 build = "build.rs"
 license = "MIT"
