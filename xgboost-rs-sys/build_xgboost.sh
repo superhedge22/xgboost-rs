@@ -64,7 +64,7 @@ fi
 
 # Configure XGBoost build
 echo "CMake options: $CMAKE_OPTIONS"
-cmake $CMAKE_OPTIONS .
+cmake $CMAKE_OPTIONS ..
 
 # Build the objxgboost target which compiles all the object files
 make objxgboost
