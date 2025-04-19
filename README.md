@@ -17,6 +17,37 @@ Building this crate will automatically build XGBoost from source and initialize 
 
 Currently supported version: [v3.0.0](https://github.com/dmlc/xgboost/releases/tag/v3.0.0)
 
+## Troubleshooting
+
+### Submodule initialization issues
+
+If you encounter errors like:
+```
+XGBoost directory still not found after submodule initialization. Please check your git configuration.
+```
+
+You can try:
+
+1. Run the included setup script:
+   ```bash
+   ./setup_xgboost.sh
+   ```
+
+2. Or manually clone the XGBoost repository:
+   ```bash
+   git clone --branch release_3.0.0 --depth 1 https://github.com/dmlc/xgboost xgboost-rs-sys/xgboost
+   cd xgboost-rs-sys/xgboost
+   git submodule update --init --recursive
+   ```
+
+3. Check that your `.gitmodules` file contains the correct URL and branch:
+   ```
+   [submodule "xgboost-rs-sys/xgboost"]
+       path = xgboost-rs-sys/xgboost
+       url = https://github.com/dmlc/xgboost
+       branch = release_3.0.0
+   ```
+
 ## Important Note for macOS Users
 
 With the upgrade to XGBoost 3.0.0, **OpenMP is now required** for proper operation on macOS. **Xcode** is also required for development on macOS.

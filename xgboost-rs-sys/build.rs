@@ -13,23 +13,95 @@ fn main() {
     if !xgb_root.exists() {
         println!("cargo:warning=XGBoost submodule not found. Attempting to initialize it automatically...");
         
-        // Try to initialize the git submodule
-        let git_result = Command::new("git")
-            .args(&["submodule", "update", "--init", "--recursive"])
-            .status();
+        // Try to use our helper script first
+        let script_path = env::current_dir().unwrap().join("setup_xgboost.sh");
+        let mut xgboost_initialized = false;
+        
+        if script_path.exists() {
+            println!("cargo:warning=Using setup script to initialize XGBoost...");
             
-        match git_result {
-            Ok(status) if status.success() => {
-                println!("cargo:warning=Successfully initialized XGBoost submodule.");
-            },
-            _ => {
-                panic!("Failed to initialize XGBoost submodule. Please run 'git submodule update --init --recursive' manually.");
+            let setup_result = Command::new(script_path)
+                .status();
+                
+            match setup_result {
+                Ok(status) if status.success() => {
+                    println!("cargo:warning=Successfully initialized XGBoost using setup script.");
+                    
+                    // Verify the directory now exists
+                    if !xgb_root.exists() {
+                        panic!("XGBoost directory still not found after running setup script. Check the script for errors.");
+                    }
+                    
+                    // Continue with the build process
+                    println!("cargo:warning=XGBoost directory confirmed to exist after setup.");
+                    xgboost_initialized = true;
+                },
+                _ => {
+                    println!("cargo:warning=Failed to run setup script. Falling back to alternative methods...");
+                }
             }
         }
         
-        // Verify the directory now exists
+        // Only proceed with fallback methods if the setup script didn't succeed
+        if !xgboost_initialized {
+            // Try to initialize the git submodule as a fallback
+            let git_result = Command::new("git")
+                .args(&["submodule", "update", "--init", "--recursive"])
+                .status();
+                
+            let mut submodule_success = false;
+            
+            match git_result {
+                Ok(status) if status.success() => {
+                    println!("cargo:warning=Successfully initialized XGBoost submodule.");
+                    submodule_success = true;
+                },
+                _ => {
+                    println!("cargo:warning=Failed to initialize XGBoost submodule with standard git command. Trying alternative methods...");
+                }
+            }
+            
+            // Verify the directory now exists after git submodule init
+            if !xgb_root.exists() && submodule_success {
+                println!("cargo:warning=XGBoost directory not found after seemingly successful submodule initialization.");
+                submodule_success = false;
+            }
+            
+            // Fallback: If submodule initialization failed, clone the repo directly
+            if !submodule_success {
+                println!("cargo:warning=Attempting to clone XGBoost directly...");
+                
+                // Create parent directory if it doesn't exist
+                std::fs::create_dir_all(&xgb_root.parent().unwrap()).unwrap_or_else(|_| {
+                    println!("cargo:warning=Parent directory already exists.");
+                });
+                
+                // Clone specific branch/tag (3.0.0) directly
+                let clone_result = Command::new("git")
+                    .args(&["clone", "--branch", "release_3.0.0", "--depth", "1", "https://github.com/dmlc/xgboost"])
+                    .current_dir(xgb_root.parent().unwrap())
+                    .status();
+                    
+                match clone_result {
+                    Ok(status) if status.success() => {
+                        println!("cargo:warning=Successfully cloned XGBoost repository.");
+                        
+                        // Initialize XGBoost's own submodules
+                        let _ = Command::new("git")
+                            .args(&["submodule", "update", "--init", "--recursive"])
+                            .current_dir(&xgb_root)
+                            .status();
+                    },
+                    _ => {
+                        panic!("Failed to clone XGBoost repository. Please check your network connection or manually clone XGBoost.");
+                    }
+                }
+            }
+        }
+        
+        // Final verification
         if !xgb_root.exists() {
-            panic!("XGBoost directory still not found after submodule initialization. Please check your git configuration.");
+            panic!("XGBoost directory still not found after all initialization attempts. Please check your git configuration or manually place XGBoost in the correct location.");
         }
     }
 

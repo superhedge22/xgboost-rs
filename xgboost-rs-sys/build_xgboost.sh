@@ -4,6 +4,10 @@ set -e
 # Go to the xgboost directory
 cd "$(dirname "$0")/xgboost"
 
+# Make sure XGBoost's own submodules are initialized
+echo "Ensuring XGBoost submodules are initialized..."
+git submodule update --init --recursive
+
 # Create build directory if it doesn't exist
 mkdir -p build
 cd build
