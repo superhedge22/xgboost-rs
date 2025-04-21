@@ -5,6 +5,21 @@ use serde::{Deserialize, Serialize};
 
 use super::{linear, tree};
 
+#[derive(Debug, Clone, Copy)]
+pub enum SaveFormat {
+    Json,
+    UBJson,
+}
+
+impl SaveFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SaveFormat::Json => "json",
+            SaveFormat::UBJson => "ubj",
+        }
+    }
+}
+
 /// Type of booster to use when training a [Booster](../struct.Booster.html) model.
 #[derive(Clone)]
 #[cfg_attr(feature = "use_serde", derive(Deserialize, Serialize))]

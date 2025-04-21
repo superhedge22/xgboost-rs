@@ -4,7 +4,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::{ffi, path::Path, ptr, slice};
 use serde_json::json;
 
-use crate::{XGBError, XGBResult};
+use crate::error::XGBResult;
+use crate::error::XGBError;
 
 static KEY_GROUP_PTR: &str = "group_ptr";
 static KEY_GROUP: &str = "group";
@@ -16,7 +17,7 @@ static KEY_BASE_MARGIN: &str = "base_margin";
 ///
 /// It's used as a container for both features (i.e. a row for every instance), and an optional true label for that
 /// instance (as an `f32` value).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DMatrix {
     pub(super) handle: xgboost_rs_sys::DMatrixHandle,
     num_rows: usize,

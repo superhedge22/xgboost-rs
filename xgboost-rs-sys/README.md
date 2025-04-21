@@ -112,3 +112,87 @@ If you encounter linking errors:
 - A recent C++ compiler supporting C++11 (g++-5.0 or higher)
 - libclang
 - OpenMP (required for XGBoost 3.0.0)
+
+## Preprocessing Modules
+
+This library provides scikit-learn inspired preprocessing modules to handle data preparation before feeding it to XGBoost models:
+
+### Available Transformers
+
+- **StandardScaler**: Standardizes features by removing the mean and scaling to unit variance
+- **SimpleImputer**: Handles missing values using strategies like mean, median, most frequent, or constant values
+- **OneHotEncoder**: Transforms categorical features into one-hot encoded numerical features
+- **ColumnTransformer**: Applies different transformers to specific columns of a dataset
+- **Pipeline**: Chains multiple transformers into a single transformation workflow with optional prediction
+
+### Example Usage
+
+```rust
+use ndarray::{array, ArrayView2};
+use xgboostrs::preprocessing::{
+    pipeline::Pipeline,
+    imputer::SimpleImputer,
+    scaler::StandardScaler,
+    Transformer
+};
+use xgboostrs::parameters::preprocessing::ImputationStrategy;
+
+// Create preprocessing steps
+let imputer = SimpleImputer::new(ImputationStrategy::Mean);
+let scaler = StandardScaler::new();
+
+// Create a pipeline with multiple transformers
+let steps = vec![
+    ("imputer".to_string(), Box::new(imputer) as Box<dyn Transformer>),
+    ("scaler".to_string(), Box::new(scaler) as Box<dyn Transformer>),
+];
+
+let mut pipeline = Pipeline::new(steps);
+
+// Sample data with missing values
+let data = array![[1.0, f64::NAN], [3.0, 2.0], [f64::NAN, 5.0]];
+
+// Fit and transform the data
+let transformed = pipeline.fit_transform(&data.view()).unwrap();
+
+```
+
+## Important Note for macOS Users
+
+With the upgrade to XGBoost 3.0.0, **OpenMP is now required** for proper operation on macOS. **Xcode** is also required for development on macOS.
+
+Quick setup for macOS:
+```bash
+# Check if brew is installed and install OpenMP
+if command -v brew &> /dev/null; then
+    brew install libomp
+else
+    echo "Homebrew not found. Please install it from https://brew.sh/ and then run 'brew install libomp'"
+    # Or you can use the script in xgboost-rs-sys
+    # cd xgboost-rs-sys && ./install_deps.sh
+fi
+
+# When running tests, you may need to set these environment variables
+export LIBRARY_PATH="$(brew --prefix libomp)/lib:$LIBRARY_PATH"
+export DYLD_LIBRARY_PATH="$(brew --prefix libomp)/lib:$DYLD_LIBRARY_PATH"
+```
+
+See the [xgboost-rs-sys README](xgboost-rs-sys/README.md) for more detailed instructions.
+
+## Dependencies
+- See [Build XGBoost from Source](https://xgboost.readthedocs.io/en/stable/build.html#building-from-source)
+- CMake 3.14 or higher
+- A recent C++ compiler supporting C++11 (g++-5.0 or higher)
+- libclang
+- OpenMP library (required for macOS with XGBoost 3.0.0)
+- Xcode (required for macOS)
+
+## Supported Platforms
+
+This library has been tested and should work on the following platforms:
+- macOS with Intel processors
+- macOS with Apple Silicon (M1/M2/M3)
+- Linux AMD64 (x86_64)
+- Linux ARM64
+
+For platform-specific build instructions, see the [xgboost-rs-sys README](xgboost-rs-sys/README.md).

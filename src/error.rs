@@ -3,6 +3,29 @@
 use std::error::Error;
 use std::ffi::CStr;
 use std::fmt::{self, Display};
+use thiserror::Error;
+
+#[derive(Error, Debug, PartialEq)]
+pub enum PreprocessingError {
+    #[error("Cannot fit with empty array")]
+    EmptyArray,
+    #[error("Failed to compute mean")]
+    ComputeMean,
+    #[error("Failed to find most frequent value")]
+    MostFrequent,
+    #[error("Model has not been fitted yet. Call 'fit' first.")]
+    NotFitted,
+    #[error("X has {0} features, but model was fitted with {1} features.")]
+    FeatureMismatch(usize, usize),
+    #[error("Found unknown category {0} in column {1} during transform")]
+    UnknownCategory(f64, usize),
+    #[error("Column index {0} out of bounds")]
+    ColumnIndexOutOfBounds(usize),
+    #[error("Model has no steps")]
+    NoSteps,
+    #[error("Model has no predict")]
+    NoPredict,
+}
 
 /// Convenience return type for most operations which can return an `XGBError`.
 pub type XGBResult<T> = std::result::Result<T, XGBError>;
