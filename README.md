@@ -87,3 +87,49 @@ This library has been tested and should work on the following platforms:
 - Linux ARM64
 
 For platform-specific build instructions, see the [xgboost-rs-sys README](xgboost-rs-sys/README.md).
+
+## Preprocessing Modules
+
+This library provides scikit-learn inspired preprocessing modules to handle data preparation before feeding it to XGBoost models:
+
+### Available Transformers
+
+- **StandardScaler**: Standardizes features by removing the mean and scaling to unit variance
+- **SimpleImputer**: Handles missing values using strategies like mean, median, most frequent, or constant values
+- **OneHotEncoder**: Transforms categorical features into one-hot encoded numerical features
+- **ColumnTransformer**: Applies different transformers to specific columns of a dataset
+- **Pipeline**: Chains multiple transformers into a single transformation workflow with optional prediction
+
+### Example Usage
+
+```rust
+use ndarray::{array, ArrayView2};
+use xgboostrs::preprocessing::{
+    pipeline::Pipeline,
+    imputer::SimpleImputer,
+    scaler::StandardScaler,
+    Transformer
+};
+use xgboostrs::parameters::preprocessing::ImputationStrategy;
+
+// Create preprocessing steps
+let imputer = SimpleImputer::new(ImputationStrategy::Mean);
+let scaler = StandardScaler::new();
+
+// Create a pipeline with multiple transformers
+let steps = vec![
+    ("imputer".to_string(), Box::new(imputer) as Box<dyn Transformer>),
+    ("scaler".to_string(), Box::new(scaler) as Box<dyn Transformer>),
+];
+
+let mut pipeline = Pipeline::new(steps);
+
+// Sample data with missing values
+let data = array![[1.0, f64::NAN], [3.0, 2.0], [f64::NAN, 5.0]];
+
+// Fit and transform the data
+let transformed = pipeline.fit_transform(&data.view()).unwrap();
+
+```
+
+
