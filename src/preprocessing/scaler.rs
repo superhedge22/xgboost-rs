@@ -14,6 +14,7 @@ use super::Transformer;
 /// ```
 /// use ndarray::{array, ArrayView2};
 /// use xgboostrs::preprocessing::scaler::StandardScaler;
+/// use xgboostrs::preprocessing::Transformer;
 ///
 /// let mut scaler = StandardScaler::new();
 /// let data = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
@@ -23,9 +24,9 @@ use super::Transformer;
 /// ```
 pub struct StandardScaler {
     /// The mean of each feature, computed during fitting
-    mean: Option<Array1<f64>>,
+    mean: Option<Array1<f32>>,
     /// The standard deviation of each feature, computed during fitting
-    scale: Option<Array1<f64>>,
+    scale: Option<Array1<f32>>,
 }
 
 impl StandardScaler {
@@ -72,12 +73,12 @@ impl StandardScaler {
     /// ```
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
-    ///
+    /// use xgboostrs::preprocessing::Transformer;
     /// let mut scaler = StandardScaler::new();
     /// let data = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
     /// scaler.fit(&data.view()).unwrap();
     /// ```
-    pub fn fit(&mut self, x: &ArrayView2<f64>) -> Result<&mut Self, PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<&mut Self, PreprocessingError> {
         if x.nrows() == 0 {
             return Err(PreprocessingError::EmptyArray);
         }
@@ -86,7 +87,7 @@ impl StandardScaler {
             .ok_or(PreprocessingError::ComputeMean)?;
         
         let var = x.var_axis(Axis(0), 1.0);
-        let mut scale = var.mapv(f64::sqrt);
+        let mut scale = var.mapv(f32::sqrt);
         
         // Handle zeros in scale (avoid division by zero)
         for val in scale.iter_mut() {
@@ -125,7 +126,8 @@ impl StandardScaler {
     /// ```
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
-    ///
+    /// use xgboostrs::preprocessing::Transformer;
+    /// 
     /// let mut scaler = StandardScaler::new();
     /// let train_data = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
     /// scaler.fit(&train_data.view()).unwrap();
@@ -133,7 +135,7 @@ impl StandardScaler {
     /// let test_data = array![[0.0, 0.0], [10.0, 10.0]];
     /// let scaled_data = scaler.transform(&test_data.view()).unwrap();
     /// ```
-    pub fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         let mean = self.mean.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -177,12 +179,13 @@ impl StandardScaler {
     /// ```
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
+    /// use xgboostrs::preprocessing::Transformer;
     ///
     /// let mut scaler = StandardScaler::new();
     /// let data = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
     /// let scaled_data = scaler.fit_transform(&data.view()).unwrap();
     /// ```
-    pub fn fit_transform(&mut self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit(x)?;
         self.transform(&x.view())
     }
@@ -201,7 +204,7 @@ impl Transformer for StandardScaler {
     /// # Returns
     ///
     /// `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2<f64>) -> Result<(), PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
         self.fit(x)?;
         Ok(())
     }
@@ -215,7 +218,7 @@ impl Transformer for StandardScaler {
     /// # Returns
     ///
     /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.transform(x)
     }
 
@@ -228,7 +231,7 @@ impl Transformer for StandardScaler {
     /// # Returns
     ///
     /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit_transform(x)
     }
 }
@@ -268,7 +271,7 @@ mod tests {
     #[test]
     fn test_standard_scaler_fit_empty_array() {
         let mut scaler = StandardScaler::new();
-        let x = Array2::<f64>::zeros((0, 2));
+        let x = Array2::<f32>::zeros((0, 2));
         
         let result = scaler.fit(&x.view());
         assert!(matches!(result, Err(PreprocessingError::EmptyArray)));

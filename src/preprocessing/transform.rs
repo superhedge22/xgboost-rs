@@ -114,7 +114,7 @@ impl ColumnTransformer {
     /// // Fit the transformer
     /// transformer.fit(&data.view()).unwrap();
     /// ```
-    pub fn fit(&mut self, x: &ArrayView2<f64>) -> Result<&mut Self, PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<&mut Self, PreprocessingError> {
         for (_, transformer, columns) in &mut self.transformers {
             // Extract subset of columns
             let x_subset = extract_columns(x, columns)?;
@@ -164,7 +164,7 @@ impl ColumnTransformer {
     /// let test_data = array![[2.0, 3.0], [4.0, 5.0]];
     /// let transformed = transformer.transform(&test_data.view()).unwrap();
     /// ```
-    pub fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         if !self.fitted {
             return Err(PreprocessingError::NotFitted);
         }
@@ -226,9 +226,24 @@ impl ColumnTransformer {
     /// // Fit and transform in one step
     /// let transformed = transformer.fit_transform(&data.view()).unwrap();
     /// ```
-    pub fn fit_transform(&mut self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit(x)?;
         self.transform(&x.view())
+    }
+}
+
+impl Transformer for ColumnTransformer {
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
+        self.fit(x)?;
+        Ok(())
+    }
+
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+        self.transform(x)
+    }
+
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+        self.fit_transform(x)
     }
 }
 
@@ -243,11 +258,11 @@ mod tests {
     // A simple mock transformer that multiplies values by a constant factor
     struct MockTransformer {
         fitted: bool,
-        factor: f64,
+        factor: f32,
     }
 
     impl MockTransformer {
-        fn new(factor: f64) -> Self {
+        fn new(factor: f32) -> Self {
             MockTransformer {
                 fitted: false,
                 factor,
@@ -256,18 +271,23 @@ mod tests {
     }
 
     impl Transformer for MockTransformer {
-        fn fit(&mut self, _: &ArrayView2<f64>) -> Result<(), PreprocessingError> {
+        fn fit(&mut self, _: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
             self.fitted = true;
             Ok(())
         }
 
-        fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+        fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
             if !self.fitted {
                 return Err(PreprocessingError::NotFitted);
             }
             let mut result = x.to_owned();
             result.mapv_inplace(|v| v * self.factor);
             Ok(result)
+        }
+
+        fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+            self.fit(x)?;
+            self.transform(x)
         }
     }
 

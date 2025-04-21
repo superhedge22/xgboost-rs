@@ -18,12 +18,13 @@ use super::Transformer;
 /// use ndarray::{array, ArrayView2};
 /// use xgboostrs::preprocessing::imputer::SimpleImputer;
 /// use xgboostrs::parameters::preprocessing::ImputationStrategy;
+/// use xgboostrs::preprocessing::Transformer;
 ///
 /// // Create an imputer using the mean strategy
 /// let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
 ///
 /// // Data with missing values
-/// let data = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN]];
+/// let data = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
 ///
 /// // Fit and transform the data
 /// let result = imputer.fit_transform(&data.view()).unwrap();
@@ -32,7 +33,7 @@ pub struct SimpleImputer {
     /// The imputation strategy to use for missing values
     strategy: ImputationStrategy,
     /// The imputation values calculated during fitting for each feature
-    statistics: Option<Array1<f64>>,
+    statistics: Option<Array1<f32>>,
 }
 
 impl SimpleImputer {
@@ -51,6 +52,7 @@ impl SimpleImputer {
     /// ```
     /// use xgboostrs::preprocessing::imputer::SimpleImputer;
     /// use xgboostrs::parameters::preprocessing::ImputationStrategy;
+    /// use xgboostrs::preprocessing::Transformer;
     ///
     /// // Create imputer with mean strategy
     /// let mean_imputer = SimpleImputer::new(ImputationStrategy::Mean);
@@ -88,12 +90,13 @@ impl SimpleImputer {
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::imputer::SimpleImputer;
     /// use xgboostrs::parameters::preprocessing::ImputationStrategy;
+    /// use xgboostrs::preprocessing::Transformer;
     ///
     /// let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
-    /// let data = array![[1.0, 2.0], [3.0, f64::NAN], [f64::NAN, 6.0]];
+    /// let data = array![[1.0, 2.0], [3.0, f32::NAN], [f32::NAN, 6.0]];
     /// imputer.fit(&data.view()).unwrap();
     /// ```
-    pub fn fit(&mut self, x: &ArrayView2<f64>) -> Result<&mut Self, PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<&mut Self, PreprocessingError> {
         let n_features = x.ncols();
         let mut stats = Array1::zeros(n_features);
         
@@ -103,27 +106,27 @@ impl SimpleImputer {
             match &self.strategy {
                 ImputationStrategy::Mean => {
                     // Filter out NaN values and compute mean
-                    let valid_values: Vec<f64> = column.iter()
+                    let valid_values: Vec<f32> = column.iter()
                         .filter(|&&x| !x.is_nan())
                         .copied()
                         .collect();
                     
                     if valid_values.is_empty() {
-                        stats[j] = f64::NAN;
+                        stats[j] = f32::NAN;
                     } else {
-                        let sum: f64 = valid_values.iter().sum();
-                        stats[j] = sum / valid_values.len() as f64;
+                        let sum: f32 = valid_values.iter().sum();
+                        stats[j] = sum / valid_values.len() as f32;
                     }
                 },
                 ImputationStrategy::Median => {
                     // Filter out NaN values, sort, and find median
-                    let mut valid_values: Vec<f64> = column.iter()
+                    let mut valid_values: Vec<f32> = column.iter()
                         .filter(|&&x| !x.is_nan())
                         .copied()
                         .collect();
                     
                     if valid_values.is_empty() {
-                        stats[j] = f64::NAN;
+                        stats[j] = f32::NAN;
                     } else {
                         valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         let mid = valid_values.len() / 2;
@@ -135,7 +138,7 @@ impl SimpleImputer {
                     }
                 },
                 ImputationStrategy::MostFrequent => {
-                    let mut value_counts: HashMap<u64, usize> = HashMap::new();
+                    let mut value_counts: HashMap<u32, usize> = HashMap::new();
                     
                     for &val in column.iter() {
                         if !val.is_nan() {
@@ -146,14 +149,14 @@ impl SimpleImputer {
                     }
                     
                     if value_counts.is_empty() {
-                        stats[j] = f64::NAN;
+                        stats[j] = f32::NAN;
                     } else {
                         // Find most frequent value
                         let (&bits, _) = value_counts.iter()
                             .max_by_key(|&(_, count)| *count)
                             .ok_or(PreprocessingError::MostFrequent)?;
                         
-                        stats[j] = f64::from_bits(bits);
+                        stats[j] = f32::from_bits(bits);
                     }
                 },
                 ImputationStrategy::Constant(value) => {
@@ -177,7 +180,7 @@ impl SimpleImputer {
     ///
     /// # Returns
     ///
-    /// * `Result<Array2<f64>, PreprocessingError>` - The transformed data with imputed values on success, or an error
+    /// * `Result<Array2<f32>, PreprocessingError>` - The transformed data with imputed values on success, or an error
     ///
     /// # Errors
     ///
@@ -190,15 +193,16 @@ impl SimpleImputer {
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::imputer::SimpleImputer;
     /// use xgboostrs::parameters::preprocessing::ImputationStrategy;
+    /// use xgboostrs::preprocessing::Transformer;
     ///
     /// let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
     /// let train_data = array![[1.0, 2.0], [3.0, 4.0]];
     /// imputer.fit(&train_data.view()).unwrap();
     ///
-    /// let test_data = array![[f64::NAN, 5.0], [6.0, f64::NAN]];
+    /// let test_data = array![[f32::NAN, 5.0], [6.0, f32::NAN]];
     /// let transformed = imputer.transform(&test_data.view()).unwrap();
     /// ```
-    pub fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         let stats = self.statistics.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -241,15 +245,18 @@ impl SimpleImputer {
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::imputer::SimpleImputer;
     /// use xgboostrs::parameters::preprocessing::ImputationStrategy;
+    /// use xgboostrs::preprocessing::Transformer;
     ///
     /// let mut imputer = SimpleImputer::new(ImputationStrategy::Median);
-    /// let data = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN]];
+    /// let data = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
     /// let result = imputer.fit_transform(&data.view()).unwrap();
     /// ```
-    pub fn fit_transform(&mut self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit(x)?;
         self.transform(&x.view())
     }
+
+    
 }
 
 /// Implementation of the `Transformer` trait for `SimpleImputer`.
@@ -265,7 +272,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2<f64>) -> Result<(), PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
         self.fit(x)?;
         Ok(())
     }
@@ -279,7 +286,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.transform(x)
     }
 
@@ -292,7 +299,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit_transform(x)
     }
 }
@@ -300,7 +307,6 @@ impl Transformer for SimpleImputer {
 #[cfg(test)]
 mod tests {
     use ndarray::array;
-
     use super::*;
 
     #[test]
@@ -318,7 +324,7 @@ mod tests {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
         
         // Array with missing values
-        let x = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN]];
+        let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         
         imputer.fit(&x.view()).unwrap();
         
@@ -334,7 +340,7 @@ mod tests {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Median);
         
         // Array with missing values
-        let x = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN], [5.0, 8.0]];
+        let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN], [5.0, 8.0]];
         
         imputer.fit(&x.view()).unwrap();
         
@@ -352,8 +358,8 @@ mod tests {
         // Array with missing values and duplicates
         let x = array![
             [1.0, 2.0], 
-            [f64::NAN, 3.0], 
-            [2.0, f64::NAN], 
+            [f32::NAN, 3.0], 
+            [2.0, f32::NAN], 
             [2.0, 3.0], 
             [5.0, 3.0]
         ];
@@ -372,7 +378,7 @@ mod tests {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Constant(99.0));
         
         // Array with missing values
-        let x = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN]];
+        let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         
         imputer.fit(&x.view()).unwrap();
         
@@ -388,11 +394,11 @@ mod tests {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
         
         // Fit with some data
-        let x_train = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN]];
+        let x_train = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         imputer.fit(&x_train.view()).unwrap();
         
         // Transform with missing values
-        let x_test = array![[f64::NAN, 1.0], [3.0, f64::NAN]];
+        let x_test = array![[f32::NAN, 1.0], [3.0, f32::NAN]];
         let result = imputer.transform(&x_test.view()).unwrap();
         
         // Check transformed values
@@ -407,7 +413,7 @@ mod tests {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
         
         // Array with missing values
-        let x = array![[1.0, 2.0], [f64::NAN, 3.0], [4.0, f64::NAN]];
+        let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         
         // Apply fit_transform
         let result = imputer.fit_transform(&x.view()).unwrap();
@@ -426,7 +432,7 @@ mod tests {
         let imputer = SimpleImputer::new(ImputationStrategy::Mean);
         
         // Try to transform without fitting
-        let x = array![[1.0, 2.0], [f64::NAN, 3.0]];
+        let x = array![[1.0, 2.0], [f32::NAN, 3.0]];
         let result = imputer.transform(&x.view());
         
         // Should fail with NotFitted error
@@ -457,7 +463,7 @@ mod tests {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
         
         // Column with all NaN values
-        let x = array![[1.0, f64::NAN], [2.0, f64::NAN], [3.0, f64::NAN]];
+        let x = array![[1.0, f32::NAN], [2.0, f32::NAN], [3.0, f32::NAN]];
         
         imputer.fit(&x.view()).unwrap();
         
