@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 
 use log::debug;
+use ndarray::{Array2, Array3, ArrayView2};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufRead, BufReader, Write};
@@ -9,12 +10,13 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{ffi, fmt, fs::File, ptr, slice};
 
+use crate::dmatrix::DMatrix;
+use crate::error::{XGBError, XGBResult};
+use crate::parameters::booster::SaveFormat;
 use crate::parameters::{BoosterParameters, TrainingParameters};
-use crate::{SaveFormat, XGBError, XGBResult};
+use crate::{IntegerSqrt, Predict};
 
-use super::DMatrix;
-
-pub type CustomObjective = fn(&[f32], &DMatrix) -> (Vec<f32>, Vec<f32>);
+pub type CustomObjective = fn(&ArrayView2<f32>, &DMatrix) -> (Array2<f32>, Array2<f32>);
 
 /// Used to control the return type of predictions made by C Booster API.
 enum PredictOption {
@@ -201,76 +203,78 @@ impl Booster {
     /// # Panics
     ///
     /// Will panic, if `XGBoost` fails to load the number of processes from `Rabit`.
-    pub fn train_increment(params: &TrainingParameters, model_name: &str) -> XGBResult<Self> {
-        let mut dmats = vec![params.dtrain];
-        if let Some(eval_sets) = params.evaluation_sets {
-            for (dmat, _) in eval_sets {
-                dmats.push(*dmat);
-            }
-        }
+    pub fn train_increment(_params: &TrainingParameters, _model_name: &str) -> XGBResult<Self> {
+        todo!() // this substantially changed, so we will do this later
 
-        let path = Path::new(model_name);
-        let bytes = std::fs::read(path).expect("can't read saved booster file");
-        let mut bst = Booster::load_buffer(&bytes[..]).expect("can't load booster from buffer");
+        // let mut dmats = vec![params.dtrain];
+        // if let Some(eval_sets) = params.evaluation_sets {
+        //     for (dmat, _) in eval_sets {
+        //         dmats.push(*dmat);
+        //     }
+        // }
 
-        // load distributed code checkpoint from rabit
-        let version = bst.load_rabit_checkpoint()?;
-        debug!("Loaded Rabit checkpoint: version={}", version);
-        assert!(unsafe { xgboost_rs_sys::XGCommunicatorGetWorldSize() != 1 || version == 0 });
-        #[allow(clippy::unnecessary_cast)]
-        let _rank = unsafe { xgboost_rs_sys::XGCommunicatorGetRank() } as u32;
-        let start_iteration = version / 2;
+        // let path = Path::new(model_name);
+        // let bytes = std::fs::read(path).expect("can't read saved booster file");
+        // let mut bst = Booster::load_buffer(&bytes[..]).expect("can't load booster from buffer");
 
-        for i in start_iteration..params.boost_rounds as i32 {
-            // distributed code: need to resume to this point
-            // skip first update if a recovery step
-            if version % 2 == 0 {
-                if let Some(objective_fn) = params.custom_objective_fn {
-                    debug!("Boosting in round: {}", i);
-                    bst.update_custom(params.dtrain, objective_fn)?;
-                } else {
-                    debug!("Updating in round: {}", i);
-                    bst.update(params.dtrain, i)?;
-                }
-                bst.save_rabit_checkpoint()?;
-            }
+        // // load distributed code checkpoint from rabit
+        // let version = bst.load_rabit_checkpoint()?;
+        // debug!("Loaded Rabit checkpoint: version={}", version);
+        // assert!(unsafe { xgboost_rs_sys::XGCommunicatorGetWorldSize() != 1 || version == 0 });
+        // #[allow(clippy::unnecessary_cast)]
+        // let _rank = unsafe { xgboost_rs_sys::XGCommunicatorGetRank() } as u32;
+        // let start_iteration = version / 2;
 
-            assert!(unsafe {
-                xgboost_rs_sys::XGCommunicatorGetWorldSize() == 1
-                    || version == 0 // XGBoost 3.0.0 doesn't have RabitVersionNumber anymore
-            });
+        // for i in start_iteration..params.boost_rounds as i32 {
+        //     // distributed code: need to resume to this point
+        //     // skip first update if a recovery step
+        //     if version % 2 == 0 {
+        //         if let Some(objective_fn) = params.custom_objective_fn {
+        //             debug!("Boosting in round: {}", i);
+        //             bst.update_custom(params.dtrain, objective_fn)?;
+        //         } else {
+        //             debug!("Updating in round: {}", i);
+        //             bst.update(params.dtrain, i)?;
+        //         }
+        //         bst.save_rabit_checkpoint()?;
+        //     }
 
-            //nboost += 1;
+        //     assert!(unsafe {
+        //         xgboost_rs_sys::XGCommunicatorGetWorldSize() == 1
+        //             || version == 0 // XGBoost 3.0.0 doesn't have RabitVersionNumber anymore
+        //     });
 
-            if let Some(eval_sets) = params.evaluation_sets {
-                let mut dmat_eval_results = bst.eval_set(eval_sets, i)?;
+        //     //nboost += 1;
 
-                if let Some(eval_fn) = params.custom_evaluation_fn {
-                    let eval_name = "custom";
-                    for (dmat, dmat_name) in eval_sets {
-                        let margin = bst.predict_margin(dmat)?;
-                        let eval_result = eval_fn(&margin, dmat);
-                        let eval_results = dmat_eval_results
-                            .entry(eval_name.to_string())
-                            .or_insert_with(IndexMap::new);
-                        eval_results.insert(String::from(*dmat_name), eval_result);
-                    }
-                }
+        //     if let Some(eval_sets) = params.evaluation_sets {
+        //         let mut dmat_eval_results = bst.eval_set(eval_sets, i)?;
 
-                // convert to map of eval_name -> (dmat_name -> score)
-                let mut eval_dmat_results = BTreeMap::new();
-                for (dmat_name, eval_results) in &dmat_eval_results {
-                    for (eval_name, result) in eval_results {
-                        let dmat_results = eval_dmat_results
-                            .entry(eval_name)
-                            .or_insert_with(BTreeMap::new);
-                        dmat_results.insert(dmat_name, result);
-                    }
-                }
-            }
-        }
+        //         if let Some(eval_fn) = params.custom_evaluation_fn {
+        //             let eval_name = "custom";
+        //             for (dmat, dmat_name) in eval_sets {
+        //                 let margin = bst.predict_margin(dmat)?;
+        //                 let eval_result = eval_fn(&margin, dmat);
+        //                 let eval_results = dmat_eval_results
+        //                     .entry(eval_name.to_string())
+        //                     .or_insert_with(IndexMap::new);
+        //                 eval_results.insert(String::from(*dmat_name), eval_result);
+        //             }
+        //         }
 
-        Ok(bst)
+        //         // convert to map of eval_name -> (dmat_name -> score)
+        //         let mut eval_dmat_results = BTreeMap::new();
+        //         for (dmat_name, eval_results) in &dmat_eval_results {
+        //             for (eval_name, result) in eval_results {
+        //                 let dmat_results = eval_dmat_results
+        //                     .entry(eval_name)
+        //                     .or_insert_with(BTreeMap::new);
+        //                 dmat_results.insert(dmat_name, result);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // Ok(bst)
     }
 
     pub fn train_with_booster_params(
@@ -481,8 +485,8 @@ impl Booster {
         objective_fn: CustomObjective,
     ) -> XGBResult<()> {
         let pred = self.predict(dtrain)?;
-        let (gradient, hessian) = objective_fn(&pred, dtrain);
-        self.boost(dtrain, &gradient, &hessian)
+        let (gradient, hessian) = objective_fn(&pred.view(), dtrain);
+        self.boost(dtrain, &gradient.view(), &hessian.view())
     }
 
     /// Update this model by directly specifying the first and second order gradients.
@@ -492,7 +496,7 @@ impl Booster {
     /// * `dtrain` - matrix to train the model with for a single iteration
     /// * `gradient` - first order gradient
     /// * `hessian` - second order gradient
-    fn boost(&mut self, dtrain: &DMatrix, gradient: &[f32], hessian: &[f32]) -> XGBResult<()> {
+    fn boost(&mut self, dtrain: &DMatrix, gradient: &ArrayView2<f32>, hessian: &ArrayView2<f32>) -> XGBResult<()> {
         if gradient.len() != hessian.len() {
             let msg = format!(
                 "Mismatch between length of gradient and hessian arrays ({} != {})",
@@ -502,10 +506,10 @@ impl Booster {
             return Err(XGBError::new(msg));
         }
         assert_eq!(gradient.len(), hessian.len());
-
         // TODO: _validate_feature_names
-        let mut grad_vec = gradient.to_vec();
-        let mut hess_vec = hessian.to_vec();
+        let mut grad_vec = gradient.as_slice().ok_or(XGBError::new("Gradient is not a slice"))?.to_vec();
+        let mut hess_vec = hessian.as_slice().ok_or(XGBError::new("Hessian is not a slice"))?.to_vec();
+
         xgb_call!(xgboost_rs_sys::XGBoosterBoostOneIter(
             self.handle,
             dtrain.handle,
@@ -656,7 +660,7 @@ impl Booster {
         dmat: &DMatrix,
         out_shape: &[u64; 2],
         out_dim: &mut u64,
-    ) -> XGBResult<Vec<f32>> {
+    ) -> XGBResult<Array2<f32>> {
         let json_config = "{\"type\": 0,\"training\": false,\"iteration_begin\": 0,\"iteration_end\": 0,\"strict_shape\": true}".to_string();
 
         let mut out_result = ptr::null();
@@ -676,18 +680,23 @@ impl Booster {
 
         assert!(!out_result.is_null());
         let data = unsafe { slice::from_raw_parts(out_result, out_len as usize).to_vec() };
-        Ok(data)
+        let num_rows = dmat.num_rows();
+        let num_cols = data.len() / num_rows;
+        
+        // Convert the vector to an Array2 with the correct shape
+        Array2::from_shape_vec((num_rows, num_cols), data)
+            .map_err(|e| XGBError::new(e.to_string()))
     }
 
     /// Predict results for given data.
     ///
-    /// Returns an array containing one entry per row in the given data.
+    /// Returns a 2D array containing predictions, with shape (number of samples, number of classes).
     ///
     /// # Panics
     ///
     /// Will panic, if the predictions aren't possible for `XGBoost` or the results cannot be
     /// parsed.
-    pub fn predict(&self, dmat: &DMatrix) -> XGBResult<Vec<f32>> {
+    pub fn predict(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
         let option_mask = PredictOption::options_as_mask(&[]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -704,18 +713,23 @@ impl Booster {
 
         assert!(!out_result.is_null());
         let data = unsafe { slice::from_raw_parts(out_result, out_len as usize).to_vec() };
-        Ok(data)
+        let num_rows = dmat.num_rows();
+        let num_cols = data.len() / num_rows;
+        
+        // Convert the vector to an Array2 with the correct shape
+        Array2::from_shape_vec((num_rows, num_cols), data)
+            .map_err(|e| XGBError::new(e.to_string()))
     }
 
     /// Predict margin for given data.
     ///
-    /// Returns an array containing one entry per row in the given data.
+    /// Returns a 2D array containing margin predictions, with shape (number of samples, number of classes).
     ///
     /// # Panics
     ///
     /// Will panic, if the predictions aren't possible for `XGBoost` or the results cannot be
     /// parsed.
-    pub fn predict_margin(&self, dmat: &DMatrix) -> XGBResult<Vec<f32>> {
+    pub fn predict_margin(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::OutputMargin]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -731,12 +745,18 @@ impl Booster {
         ))?;
         assert!(!out_result.is_null());
         let data = unsafe { slice::from_raw_parts(out_result, out_len as usize).to_vec() };
-        Ok(data)
+        let num_rows = dmat.num_rows();
+        let num_cols = data.len() / num_rows;
+        
+        // Convert the vector to an Array2 with the correct shape
+        Array2::from_shape_vec((num_rows, num_cols), data)
+            .map_err(|e| XGBError::new(e.to_string()))
     }
+    
 
     /// Get predicted leaf index for each sample in given data.
     ///
-    /// Returns an array of shape (number of samples, number of trees) as tuple of (data, `num_rows`).
+    /// Returns a 2D array with shape (number of samples, number of trees).
     ///
     /// Note: the leaf index of a tree is unique per tree, so e.g. leaf 1 could be found in both tree 1 and tree 0.
     ///
@@ -744,7 +764,7 @@ impl Booster {
     ///
     /// Will panic, if the prediction of a leave isn't possible for `XGBoost` or the data cannot be
     /// parsed.
-    pub fn predict_leaf(&self, dmat: &DMatrix) -> XGBResult<(Vec<f32>, (usize, usize))> {
+    pub fn predict_leaf(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::PredictLeaf]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -763,7 +783,10 @@ impl Booster {
         let data = unsafe { slice::from_raw_parts(out_result, out_len as usize).to_vec() };
         let num_rows = dmat.num_rows();
         let num_cols = data.len() / num_rows;
-        Ok((data, (num_rows, num_cols)))
+        
+        // Convert the vector to an Array2 with the correct shape
+        Array2::from_shape_vec((num_rows, num_cols), data)
+            .map_err(|e| XGBError::new(e.to_string()))
     }
 
     /// Get feature contributions (SHAP values) for each prediction.
@@ -771,13 +794,13 @@ impl Booster {
     /// The sum of all feature contributions is equal to the run untransformed margin value of the
     /// prediction.
     ///
-    /// Returns an array of shape (number of samples, number of features + 1) as a tuple of
-    /// (data, `num_rows`). The final column contains the bias term.
+    /// Returns a 2D array with shape (number of samples, number of features + 1). The final column
+    /// contains the bias term.
     ///
     /// # Panics
     ///
     /// Will panic, if `XGBoost` cannot predict the data or parse the result.
-    pub fn predict_contributions(&self, dmat: &DMatrix) -> XGBResult<(Vec<f32>, (usize, usize))> {
+    pub fn predict_contributions(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::PredictContribitions]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -796,7 +819,10 @@ impl Booster {
         let data = unsafe { slice::from_raw_parts(out_result, out_len as usize).to_vec() };
         let num_rows = dmat.num_rows();
         let num_cols = data.len() / num_rows;
-        Ok((data, (num_rows, num_cols)))
+        
+        // Convert the vector to an Array2 with the correct shape
+        Array2::from_shape_vec((num_rows, num_cols), data)
+            .map_err(|e| XGBError::new(e.to_string()))
     }
 
     /// Get SHAP interaction values for each pair of features for each prediction.
@@ -805,16 +831,13 @@ impl Booster {
     /// value (from `predict_contributions`), and the sum of the entire matrix equals the raw
     /// untransformed margin value of the prediction.
     ///
-    /// Returns an array of shape (number of samples, number of features + 1, number of features + 1).
+    /// Returns a 3D array with shape (number of samples, number of features + 1, number of features + 1).
     /// The final row and column contain the bias terms.
     ///
     /// # Panics
     ///
     /// Will panic, if `XGBoost` cannot predict the data or parse the result.
-    pub fn predict_interactions(
-        &self,
-        dmat: &DMatrix,
-    ) -> XGBResult<(Vec<f32>, (usize, usize, usize))> {
+    pub fn predict_interactions(&self, dmat: &DMatrix) -> XGBResult<Array3<f32>> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::PredictInteractions]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -832,9 +855,11 @@ impl Booster {
 
         let data = unsafe { slice::from_raw_parts(out_result, out_len as usize).to_vec() };
         let num_rows = dmat.num_rows();
-
-        let dim = ((data.len() / num_rows) as f64).sqrt() as usize;
-        Ok((data, (num_rows, dim, dim)))
+        let num_features_p1 = (data.len() / num_rows).integer_sqrt();
+        
+        // Convert the vector to an Array3 with the correct shape
+        Array3::from_shape_vec((num_rows, num_features_p1, num_features_p1), data)
+            .map_err(|e| XGBError::new(e.to_string()))
     }
 
     /// Get a dump of this model as a string.
@@ -971,6 +996,21 @@ impl Drop for Booster {
     }
 }
 
+impl Predict for Booster {
+    fn predict(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, XGBError> {
+        let data: Vec<f32> = x.iter().copied().collect();
+        let dmat = DMatrix::from_dense(&data, x.nrows())?;
+        
+        // Call the Booster's predict method with the DMatrix
+        let predictions = self.predict(&dmat)?;
+        
+        let shape = (x.nrows(), predictions.len() / x.nrows());     
+        let predictions_f32: Vec<f32> = predictions.iter().copied().collect();
+        
+        Ok(Array2::from_shape_vec(shape, predictions_f32).map_err(|e| XGBError::new(e.to_string()))?)
+    }
+}
+
 /// Maps a feature index to a name and type, used when dumping models as text.
 ///
 /// See [`dump_model`](struct.Booster.html#method.dump_model) for usage.
@@ -1090,8 +1130,10 @@ mod tests {
     use ndarray::arr2;
 
     use crate::{
-        parameters::{self, learning, tree, BoosterParameters}, Booster, DMatrix, SaveFormat, XGBResult
+        dmatrix::DMatrix, error::XGBResult, parameters::{self, booster::SaveFormat, learning, tree, BoosterParameters}
     };
+
+    use super::Booster;
 
     fn read_train_matrix() -> XGBResult<DMatrix> {
         let data_path = "tests/data";
@@ -1285,8 +1327,8 @@ mod tests {
         assert!(*test_metrics.get("logloss").unwrap() - 0.006_92 < eps);
         assert!(*test_metrics.get("map@4-").unwrap() - 1.0 < eps);
 
-        let v = booster.predict(&dmat_test).unwrap();
-        assert_eq!(v.len(), dmat_test.num_rows());
+        let predictions = booster.predict(&dmat_test).unwrap();
+        assert_eq!(predictions.shape()[0], dmat_test.num_rows());
 
         // first 10 predictions
         let expected_start = [
@@ -1316,11 +1358,16 @@ mod tests {
             0.998_110_2,
         ];
 
-        for (pred, expected) in v.iter().zip(&expected_start) {
+        // Get the first 10 predictions from the first column of predictions
+        let first_10 = predictions.slice(ndarray::s![0..10, 0]);
+        for (pred, expected) in first_10.iter().zip(&expected_start) {
             assert!(pred - expected < eps);
         }
 
-        for (pred, expected) in v[v.len() - 10..].iter().zip(&expected_end) {
+        // Get the last 10 predictions from the first column of predictions
+        let num_rows = predictions.shape()[0];
+        let last_10 = predictions.slice(ndarray::s![(num_rows-10)..num_rows, 0]);
+        for (pred, expected) in last_10.iter().zip(&expected_end) {
             assert!(pred - expected < eps);
         }
     }
@@ -1359,9 +1406,9 @@ mod tests {
             booster.update(&dmat_train, i).expect("update failed");
         }
 
-        let (_preds, shape) = booster.predict_leaf(&dmat_test).unwrap();
+        let leaves = booster.predict_leaf(&dmat_test).unwrap();
         let num_samples = dmat_test.num_rows();
-        assert_eq!(shape, (num_samples, num_rounds as usize));
+        assert_eq!(leaves.shape(), &[num_samples, num_rounds as usize]);
     }
 
     #[test]
@@ -1393,15 +1440,17 @@ mod tests {
         let mut booster =
             Booster::new_with_cached_dmats(&params, &[&dmat_train, &dmat_test]).unwrap();
 
-        let num_rounds = 5;
+        let num_rounds = 10;
         for i in 0..num_rounds {
             booster.update(&dmat_train, i).expect("update failed");
         }
 
-        let (_preds, shape) = booster.predict_contributions(&dmat_test).unwrap();
+        let contributions = booster.predict_contributions(&dmat_test).unwrap();
         let num_samples = dmat_test.num_rows();
         let num_features = dmat_train.num_cols();
-        assert_eq!(shape, (num_samples, num_features + 1));
+        
+        // Shape should be (samples, features+1) where +1 is for the bias term
+        assert_eq!(contributions.shape(), &[num_samples, num_features + 1]);
     }
 
     #[test]
@@ -1439,11 +1488,11 @@ mod tests {
         }
 
         // Call predict_interactions and check the results
-        let (_preds, shape) = booster.predict_interactions(&dmat_test).unwrap();
+        let interactions = booster.predict_interactions(&dmat_test).unwrap();
         let num_samples = dmat_test.num_rows();
         let num_features = dmat_train.num_cols();
         // For interactions, shape should be (num_samples, (num_features + 1) * (num_features + 1))
-        assert_eq!(shape, (num_samples, num_features + 1, num_features + 1));
+        assert_eq!(interactions.shape(), &[num_samples, num_features + 1, num_features + 1]);
     }
 
     #[test]

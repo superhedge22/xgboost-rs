@@ -15,11 +15,14 @@ pub mod linear;
 pub mod tree;
 // pub mod dart;
 pub mod booster;
+pub mod preprocessing;
 
 use derive_builder::Builder;
 
-use crate::DMatrix;
 
+use crate::dmatrix::DMatrix;
+
+#[allow(unused)]
 pub use self::booster::BoosterType;
 use super::booster::CustomObjective;
 #[cfg(feature = "use_serde")]
