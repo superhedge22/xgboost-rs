@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 
 use log::debug;
+use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::ffi::OsStrExt;
@@ -9,7 +10,7 @@ use std::str::FromStr;
 use std::{ffi, fmt, fs::File, ptr, slice};
 
 use crate::parameters::{BoosterParameters, TrainingParameters};
-use crate::{XGBError, XGBResult};
+use crate::{SaveFormat, XGBError, XGBResult};
 
 use super::DMatrix;
 
@@ -128,21 +129,19 @@ impl Booster {
     ///
     /// # Arguments
     /// ----------
-    /// * `raw_format` - Format of output buffer. Can be "json", "ubj" or "deprecated".  Right now
-    ///     the default is "deprecated" but it will be changed to "ubj" (univeral binary
-    ///     json) in the future.
+    /// * `format` - The format of the model to save. Takes a value from the `SaveFormat` enum.
     ///
     /// # Returns
     /// -------
-    /// An in memory buffer representation of the model
+    /// A vector of bytes representing the model in the specified format.
     ///
     /// # Panics
     /// -------
     ///
     /// Will panic, if the model saving fails with an error not coming from `XGBoost`.
-    pub fn save_to_buffer(&self, raw_format: String) -> XGBResult<String> {
-        let json_config = format!("{{ \"format\": \"{raw_format}\"}}");
-        let json_config_cstr = ffi::CString::new(json_config)?;
+    pub fn save_to_buffer(&self, format: SaveFormat) -> XGBResult<Vec<u8>> {
+        let json_config = json!({ "format": format.as_str() });
+        let json_config_cstr = ffi::CString::new(json_config.to_string())?;
         let mut out_len: u64 = 0;
         let mut out_buffer_string: *const i8 = ptr::null();
 
@@ -155,9 +154,8 @@ impl Booster {
 
         let slice: &[u8] =
             unsafe { std::slice::from_raw_parts(out_buffer_string as *const u8, out_len as usize) };
-        let model: &str = std::str::from_utf8(slice)?;
 
-        Ok(model.to_string())
+        Ok(slice.to_vec())
     }
 
     /// Load a `Booster` from a binary file at given path.
@@ -1092,8 +1090,7 @@ mod tests {
     use ndarray::arr2;
 
     use crate::{
-        parameters::{self, learning, tree, BoosterParameters},
-        Booster, DMatrix, XGBResult,
+        parameters::{self, learning, tree, BoosterParameters}, Booster, DMatrix, SaveFormat, XGBResult
     };
 
     fn read_train_matrix() -> XGBResult<DMatrix> {
@@ -1199,11 +1196,11 @@ mod tests {
             booster.update(&dmat_train, i).expect("update failed");
         }
 
-        let json = booster
-            .save_to_buffer(String::from("json"))
+        let slice = booster
+            .save_to_buffer(SaveFormat::Json)
             .expect("saving booster failed");
 
-        let actual = &json[..330];
+        let actual = String::from_utf8(slice[..330].to_vec()).unwrap();
 
         drop(booster);
 
