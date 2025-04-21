@@ -1002,12 +1002,7 @@ impl Predict for Booster {
         let dmat = DMatrix::from_dense(&data, x.nrows())?;
         
         // Call the Booster's predict method with the DMatrix
-        let predictions = self.predict(&dmat)?;
-        
-        let shape = (x.nrows(), predictions.len() / x.nrows());     
-        let predictions_f32: Vec<f32> = predictions.iter().copied().collect();
-        
-        Ok(Array2::from_shape_vec(shape, predictions_f32).map_err(|e| XGBError::new(e.to_string()))?)
+        self.predict(&dmat)
     }
 }
 
