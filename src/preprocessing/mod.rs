@@ -12,17 +12,14 @@ pub mod pipeline;
 
 // Transformer trait for all preprocessing objects
 pub trait Transformer {
-    fn fit(&mut self, x: &ArrayView2<f64>) -> Result<(), PreprocessingError>;
-    fn transform(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError>;
-    fn fit_transform(&mut self, x: &ArrayView2<f64>) -> Result<Array2<f64>, PreprocessingError> {
-        self.fit(x)?;
-        self.transform(&x.view())
-    }
+    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError>;
+    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError>;
+    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError>;
 }
 
 
 // Helper function to extract specific columns from a 2D array
-fn extract_columns(x: &ArrayView2<f64>, columns: &[usize]) -> Result<Array2<f64>, PreprocessingError> {
+fn extract_columns(x: &ArrayView2<f32>, columns: &[usize]) -> Result<Array2<f32>, PreprocessingError> {
     // Check for out-of-bounds columns
     if let Some(&max_col) = columns.iter().max() {
         if max_col >= x.ncols() {
@@ -45,7 +42,7 @@ fn extract_columns(x: &ArrayView2<f64>, columns: &[usize]) -> Result<Array2<f64>
 }
 
 // Helper function to concatenate arrays horizontally
-fn horizontal_concat(arrays: &[Array2<f64>], nrows: usize) -> Result<Array2<f64>, PreprocessingError> {
+fn horizontal_concat(arrays: &[Array2<f32>], nrows: usize) -> Result<Array2<f32>, PreprocessingError> {
     if arrays.is_empty() {
         return Err(PreprocessingError::EmptyArray);
     }

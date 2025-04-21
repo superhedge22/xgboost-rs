@@ -4,7 +4,7 @@ pub enum ImputationStrategy {
     Mean,
     Median,
     MostFrequent,
-    Constant(f64),
+    Constant(f32),
 }
 
 /// Strategy for handling unknown categories in OneHotEncoder
