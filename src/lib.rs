@@ -47,3 +47,4 @@ pub mod booster;
 pub mod parameters;
 
 pub mod preprocessing;
+pub mod types;

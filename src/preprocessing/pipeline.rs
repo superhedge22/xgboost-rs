@@ -1,9 +1,9 @@
-use ndarray::{Array2, ArrayView2};
 use std::collections::HashMap;
 use serde_json::{json, Value};
 use std::any::Any;
 
 use crate::{error::PreprocessingError, Predict, XGBError};
+use crate::types::{Array2F, ArrayView2F};
 
 use super::Transformer;
 use super::scaler::StandardScaler;
@@ -169,7 +169,7 @@ impl Pipeline {
     /// // Fit the pipeline
     /// pipeline.fit(&data.view()).unwrap();
     /// ```
-    pub fn fit(&mut self, x: &ArrayView2<f32>) -> Result<&mut Self, PreprocessingError> {
+    pub fn fit(&mut self, x: &ArrayView2F) -> Result<&mut Self, PreprocessingError> {
         if self.steps.is_empty() {
             return Err(PreprocessingError::NoSteps);
         }
@@ -232,7 +232,7 @@ impl Pipeline {
     /// let test_data = array![[2.0, 3.0], [4.0, 5.0]];
     /// let transformed = pipeline.transform(&test_data.view()).unwrap();
     /// ```
-    pub fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    pub fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         if !self.fitted {
             return Err(PreprocessingError::NotFitted);
         }
@@ -294,7 +294,7 @@ impl Pipeline {
     /// // Fit and transform in one step
     /// let transformed = pipeline.fit_transform(&data.view()).unwrap();
     /// ```
-    pub fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    pub fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         if self.steps.is_empty() {
             return Err(PreprocessingError::NoSteps);
         }
@@ -364,7 +364,7 @@ impl Pipeline {
     /// let test_data = array![[1.0_f32, 2.0_f32], [3.0_f32, 4.0_f32]];
     /// // let predictions = pipeline.predict(&test_data.view()).unwrap();
     /// ```
-    pub fn predict(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, XGBError> {
+    pub fn predict(&self, x: &ArrayView2F) -> Result<Array2F, XGBError> {
         if !self.fitted {
             return Err(PreprocessingError::NotFitted).map_err(|e| XGBError::new(e.to_string()));
         }
@@ -559,7 +559,7 @@ impl Transformer for Pipeline {
     /// # Returns
     ///
     /// * `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
         self.fit(x)?;
         Ok(())
     }
@@ -573,7 +573,7 @@ impl Transformer for Pipeline {
     /// # Returns
     ///
     /// * `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.transform(x)
     }
 
@@ -586,7 +586,7 @@ impl Transformer for Pipeline {
     /// # Returns
     ///
     /// * `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.fit_transform(x)
     }
     
@@ -643,12 +643,12 @@ mod tests {
     }
 
     impl Transformer for MockTransformer {
-        fn fit(&mut self, _: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
+        fn fit(&mut self, _: &ArrayView2F) -> Result<(), PreprocessingError> {
             self.fitted = true;
             Ok(())
         }
 
-        fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+        fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
             if !self.fitted {
                 return Err(PreprocessingError::NotFitted);
             }
@@ -657,7 +657,7 @@ mod tests {
             Ok(result)
         }
 
-        fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+        fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
             self.fit(x)?;
             self.transform(x)
         }
@@ -701,7 +701,7 @@ mod tests {
     }
 
     impl Predict for MockPredictor {
-        fn predict(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, XGBError> {
+        fn predict(&self, x: &ArrayView2F) -> Result<Array2F, XGBError> {
             let mut result = x.to_owned();
             result.mapv_inplace(|v| v * self.factor);
             Ok(result)
@@ -1254,7 +1254,7 @@ mod tests {
         all_data.extend_from_slice(&row2);
         
         // Create a 2D array with shape (3, 65)
-        let test_data = Array2::from_shape_vec((3, 65), all_data).unwrap();
+        let test_data = Array2F::from_shape_vec((3, 65), all_data).unwrap();
         
         // Load the pipeline from file
         let loaded_pipeline = Pipeline::load_from_file(file_path).unwrap();

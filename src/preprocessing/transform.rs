@@ -1,8 +1,8 @@
-use ndarray::{Array2, ArrayView2};
 use serde_json::{json, Value};
 use std::any::Any;
 
 use crate::error::PreprocessingError;
+use crate::types::{Array2F, ArrayView2F};
 
 use super::pipeline::Pipeline;
 use super::{extract_columns, horizontal_concat, Transformer};
@@ -120,7 +120,7 @@ impl ColumnTransformer {
     /// // Fit the transformer
     /// transformer.fit(&data.view()).unwrap();
     /// ```
-    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<&mut Self, PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2F) -> Result<&mut Self, PreprocessingError> {
         for (_, transformer, columns) in &mut self.transformers {
             // Extract subset of columns
             let x_subset = extract_columns(x, columns)?;
@@ -141,7 +141,7 @@ impl ColumnTransformer {
     ///
     /// # Returns
     ///
-    /// * `Result<Array2<f64>, PreprocessingError>` - The transformed data on success, or an error
+    /// * `Result<Array2F, PreprocessingError>` - The transformed data on success, or an error
     ///
     /// # Errors
     ///
@@ -170,7 +170,7 @@ impl ColumnTransformer {
     /// let test_data = array![[2.0, 3.0], [4.0, 5.0]];
     /// let transformed = transformer.transform(&test_data.view()).unwrap();
     /// ```
-    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         if !self.fitted {
             return Err(PreprocessingError::NotFitted);
         }
@@ -199,7 +199,7 @@ impl ColumnTransformer {
     ///
     /// # Returns
     ///
-    /// * `Result<Array2<f64>, PreprocessingError>` - The transformed data on success, or an error
+    /// * `Result<Array2F, PreprocessingError>` - The transformed data on success, or an error
     ///
     /// # Errors
     ///
@@ -232,7 +232,7 @@ impl ColumnTransformer {
     /// // Fit and transform in one step
     /// let transformed = transformer.fit_transform(&data.view()).unwrap();
     /// ```
-    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.fit(x)?;
         self.transform(&x.view())
     }
@@ -356,16 +356,16 @@ impl ColumnTransformer {
 }
 
 impl Transformer for ColumnTransformer {
-    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
         self.fit(x)?;
         Ok(())
     }
 
-    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.transform(x)
     }
 
-    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.fit_transform(x)
     }
     
@@ -411,12 +411,12 @@ mod tests {
     }
 
     impl Transformer for MockTransformer {
-        fn fit(&mut self, _: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
+        fn fit(&mut self, _: &ArrayView2F) -> Result<(), PreprocessingError> {
             self.fitted = true;
             Ok(())
         }
 
-        fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+        fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
             if !self.fitted {
                 return Err(PreprocessingError::NotFitted);
             }
@@ -425,7 +425,7 @@ mod tests {
             Ok(result)
         }
 
-        fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+        fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
             self.fit(x)?;
             self.transform(x)
         }

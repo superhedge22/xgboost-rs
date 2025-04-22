@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::any::Any;
 
-use ndarray::{s, Array1, Array2, ArrayView2};
+use ndarray::s;
 use serde_json::{json, Value};
 
 use crate::{error::PreprocessingError, parameters::preprocessing::ImputationStrategy};
+use crate::types::{Array1F, Array2F, ArrayView2F};
 
 use super::Transformer;
 
@@ -35,7 +36,7 @@ pub struct SimpleImputer {
     /// The imputation strategy to use for missing values
     strategy: ImputationStrategy,
     /// The imputation values calculated during fitting for each feature
-    statistics: Option<Array1<f32>>,
+    statistics: Option<Array1F>,
     /// Optional names of the input features
     columns: Option<Vec<String>>,
 }
@@ -106,9 +107,9 @@ impl SimpleImputer {
     /// let data = array![[1.0, 2.0], [3.0, f32::NAN], [f32::NAN, 6.0]];
     /// imputer.fit(&data.view(), None).unwrap();
     /// ```
-    pub fn fit(&mut self, x: &ArrayView2<f32>, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
+    pub fn fit(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
         let n_features = x.ncols();
-        let mut stats = Array1::zeros(n_features);
+        let mut stats = Array1F::zeros(n_features);
         
         for j in 0..n_features {
             let column = x.slice(s![.., j]);
@@ -214,7 +215,7 @@ impl SimpleImputer {
     /// let test_data = array![[f32::NAN, 5.0], [6.0, f32::NAN]];
     /// let transformed = imputer.transform(&test_data.view()).unwrap();
     /// ```
-    pub fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    pub fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         let stats = self.statistics.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -264,7 +265,7 @@ impl SimpleImputer {
     /// let data = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
     /// let result = imputer.fit_transform(&data.view(), None).unwrap();
     /// ```
-    pub fn fit_transform(&mut self, x: &ArrayView2<f32>, feature_names: Option<Vec<String>>) -> Result<Array2<f32>, PreprocessingError> {
+    pub fn fit_transform(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<Array2F, PreprocessingError> {
         self.fit(x, feature_names)?;
         self.transform(&x.view())
     }
@@ -361,7 +362,7 @@ impl SimpleImputer {
                         .collect();
                         
                     if !statistics.is_empty() {
-                        imputer.statistics = Some(Array1::from(statistics));
+                        imputer.statistics = Some(Array1F::from(statistics));
                     }
                 }
             }
@@ -397,7 +398,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
+    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
         self.fit(x, None)?;
         Ok(())
     }
@@ -411,7 +412,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.transform(x)
     }
 
@@ -424,7 +425,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.fit_transform(x, None)
     }
     

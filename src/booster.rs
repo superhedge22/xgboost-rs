@@ -1,7 +1,6 @@
 use indexmap::IndexMap;
 
 use log::debug;
-use ndarray::{Array2, Array3, ArrayView2};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufRead, BufReader, Write};
@@ -15,8 +14,10 @@ use crate::error::{XGBError, XGBResult};
 use crate::parameters::booster::SaveFormat;
 use crate::parameters::{BoosterParameters, TrainingParameters};
 use crate::{IntegerSqrt, Predict};
+use crate::types::{Array2F, ArrayView2F};
+use crate::types::Array3F;
 
-pub type CustomObjective = fn(&ArrayView2<f32>, &DMatrix) -> (Array2<f32>, Array2<f32>);
+pub type CustomObjective = fn(&ArrayView2F, &DMatrix) -> (Array2F, Array2F);
 
 /// Used to control the return type of predictions made by C Booster API.
 enum PredictOption {
@@ -496,7 +497,7 @@ impl Booster {
     /// * `dtrain` - matrix to train the model with for a single iteration
     /// * `gradient` - first order gradient
     /// * `hessian` - second order gradient
-    fn boost(&mut self, dtrain: &DMatrix, gradient: &ArrayView2<f32>, hessian: &ArrayView2<f32>) -> XGBResult<()> {
+    fn boost(&mut self, dtrain: &DMatrix, gradient: &ArrayView2F, hessian: &ArrayView2F) -> XGBResult<()> {
         if gradient.len() != hessian.len() {
             let msg = format!(
                 "Mismatch between length of gradient and hessian arrays ({} != {})",
@@ -660,7 +661,7 @@ impl Booster {
         dmat: &DMatrix,
         out_shape: &[u64; 2],
         out_dim: &mut u64,
-    ) -> XGBResult<Array2<f32>> {
+    ) -> XGBResult<Array2F> {
         let json_config = "{\"type\": 0,\"training\": false,\"iteration_begin\": 0,\"iteration_end\": 0,\"strict_shape\": true}".to_string();
 
         let mut out_result = ptr::null();
@@ -684,7 +685,7 @@ impl Booster {
         let num_cols = data.len() / num_rows;
         
         // Convert the vector to an Array2 with the correct shape
-        Array2::from_shape_vec((num_rows, num_cols), data)
+        Array2F::from_shape_vec((num_rows, num_cols), data)
             .map_err(|e| XGBError::new(e.to_string()))
     }
 
@@ -696,7 +697,7 @@ impl Booster {
     ///
     /// Will panic, if the predictions aren't possible for `XGBoost` or the results cannot be
     /// parsed.
-    pub fn predict(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
+    pub fn predict(&self, dmat: &DMatrix) -> XGBResult<Array2F> {
         let option_mask = PredictOption::options_as_mask(&[]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -717,7 +718,7 @@ impl Booster {
         let num_cols = data.len() / num_rows;
         
         // Convert the vector to an Array2 with the correct shape
-        Array2::from_shape_vec((num_rows, num_cols), data)
+        Array2F::from_shape_vec((num_rows, num_cols), data)
             .map_err(|e| XGBError::new(e.to_string()))
     }
 
@@ -729,7 +730,7 @@ impl Booster {
     ///
     /// Will panic, if the predictions aren't possible for `XGBoost` or the results cannot be
     /// parsed.
-    pub fn predict_margin(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
+    pub fn predict_margin(&self, dmat: &DMatrix) -> XGBResult<Array2F> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::OutputMargin]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -749,7 +750,7 @@ impl Booster {
         let num_cols = data.len() / num_rows;
         
         // Convert the vector to an Array2 with the correct shape
-        Array2::from_shape_vec((num_rows, num_cols), data)
+        Array2F::from_shape_vec((num_rows, num_cols), data)
             .map_err(|e| XGBError::new(e.to_string()))
     }
     
@@ -764,7 +765,7 @@ impl Booster {
     ///
     /// Will panic, if the prediction of a leave isn't possible for `XGBoost` or the data cannot be
     /// parsed.
-    pub fn predict_leaf(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
+    pub fn predict_leaf(&self, dmat: &DMatrix) -> XGBResult<Array2F> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::PredictLeaf]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -785,7 +786,7 @@ impl Booster {
         let num_cols = data.len() / num_rows;
         
         // Convert the vector to an Array2 with the correct shape
-        Array2::from_shape_vec((num_rows, num_cols), data)
+        Array2F::from_shape_vec((num_rows, num_cols), data)
             .map_err(|e| XGBError::new(e.to_string()))
     }
 
@@ -800,7 +801,7 @@ impl Booster {
     /// # Panics
     ///
     /// Will panic, if `XGBoost` cannot predict the data or parse the result.
-    pub fn predict_contributions(&self, dmat: &DMatrix) -> XGBResult<Array2<f32>> {
+    pub fn predict_contributions(&self, dmat: &DMatrix) -> XGBResult<Array2F> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::PredictContribitions]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -821,7 +822,7 @@ impl Booster {
         let num_cols = data.len() / num_rows;
         
         // Convert the vector to an Array2 with the correct shape
-        Array2::from_shape_vec((num_rows, num_cols), data)
+        Array2F::from_shape_vec((num_rows, num_cols), data)
             .map_err(|e| XGBError::new(e.to_string()))
     }
 
@@ -837,7 +838,7 @@ impl Booster {
     /// # Panics
     ///
     /// Will panic, if `XGBoost` cannot predict the data or parse the result.
-    pub fn predict_interactions(&self, dmat: &DMatrix) -> XGBResult<Array3<f32>> {
+    pub fn predict_interactions(&self, dmat: &DMatrix) -> XGBResult<Array3F> {
         let option_mask = PredictOption::options_as_mask(&[PredictOption::PredictInteractions]);
         let ntree_limit = 0;
         let mut out_len = 0;
@@ -858,7 +859,7 @@ impl Booster {
         let num_features_p1 = (data.len() / num_rows).integer_sqrt();
         
         // Convert the vector to an Array3 with the correct shape
-        Array3::from_shape_vec((num_rows, num_features_p1, num_features_p1), data)
+        Array3F::from_shape_vec((num_rows, num_features_p1, num_features_p1), data)
             .map_err(|e| XGBError::new(e.to_string()))
     }
 
@@ -997,7 +998,7 @@ impl Drop for Booster {
 }
 
 impl Predict for Booster {
-    fn predict(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, XGBError> {
+    fn predict(&self, x: &ArrayView2F) -> Result<Array2F, XGBError> {
         let data: Vec<f32> = x.iter().copied().collect();
         let dmat = DMatrix::from_dense(&data, x.nrows())?;
         
