@@ -1,4 +1,6 @@
 use ndarray::{Array2, ArrayView2};
+use serde_json::Value;
+use std::any::Any;
 
 use crate::error::PreprocessingError;
 
@@ -9,12 +11,23 @@ pub mod transform;
 pub mod pipeline;
 
 
-
 // Transformer trait for all preprocessing objects
-pub trait Transformer {
+pub trait Transformer: Any {
     fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError>;
     fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError>;
     fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError>;
+    
+    /// Optional method to serialize the transformer to JSON.
+    /// Default implementation returns None, which means the transformer doesn't support serialization.
+    fn to_json_opt(&self) -> Option<Value> {
+        None
+    }
+    
+    /// Helper method to downcast to concrete type
+    fn as_any(&self) -> &dyn Any;
+    
+    /// Helper method to downcast to concrete type (mutable)
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 

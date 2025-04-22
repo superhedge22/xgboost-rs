@@ -1,5 +1,7 @@
 use crate::error::PreprocessingError;
 use ndarray::{Array1, Array2, ArrayView2, Axis};
+use serde_json::{json, Value};
+use std::any::Any;
 
 use super::Transformer;
 
@@ -189,6 +191,82 @@ impl StandardScaler {
         self.fit(x)?;
         self.transform(&x.view())
     }
+
+    /// Converts the StandardScaler to a JSON representation.
+    ///
+    /// This method serializes the complete scaler state to JSON, including:
+    /// - The learned mean and scale for each feature
+    ///
+    /// # Returns
+    /// A JSON Value containing the serialized scaler
+    pub fn to_json(&self) -> Value {
+        // Convert mean and scale to Vec<f32> for serialization
+        let mean_json = if let Some(mean) = &self.mean {
+            mean.iter().copied().collect::<Vec<f32>>()
+        } else {
+            Vec::new()
+        };
+
+        let scale_json = if let Some(scale) = &self.scale {
+            scale.iter().copied().collect::<Vec<f32>>()
+        } else {
+            Vec::new()
+        };
+
+        // Create the JSON structure
+        json!({
+            "type": "StandardScaler",
+            "init_params": {},  // No init params for this implementation
+            "attrs": {
+                "mean_": mean_json,
+                "scale_": scale_json
+            }
+        })
+    }
+
+    /// Creates a StandardScaler from its JSON representation.
+    ///
+    /// # Arguments
+    /// * `json_data` - The JSON Value containing the serialized scaler state
+    ///
+    /// # Returns
+    /// * `Result<Self, PreprocessingError>` - A new StandardScaler instance with restored state,
+    ///   or an error if the JSON data is invalid
+    pub fn from_json(json_data: Value) -> Result<Self, PreprocessingError> {
+        // Create a new instance
+        let mut scaler = StandardScaler::new();
+        
+        // Parse attributes
+        if let Some(attrs) = json_data.get("attrs") {
+            // Parse mean
+            if let Some(mean_array) = attrs.get("mean_") {
+                if let Some(values) = mean_array.as_array() {
+                    let mean_values: Vec<f32> = values.iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect();
+                        
+                    if !mean_values.is_empty() {
+                        scaler.mean = Some(Array1::from(mean_values));
+                    }
+                }
+            }
+            
+            // Parse scale
+            if let Some(scale_array) = attrs.get("scale_") {
+                if let Some(values) = scale_array.as_array() {
+                    let scale_values: Vec<f32> = values.iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect();
+                        
+                    if !scale_values.is_empty() {
+                        scaler.scale = Some(Array1::from(scale_values));
+                    }
+                }
+            }
+        }
+        
+        Ok(scaler)
+    }
 }
 
 /// Implementation of the `Transformer` trait for `StandardScaler`.
@@ -233,6 +311,23 @@ impl Transformer for StandardScaler {
     /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
     fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit_transform(x)
+    }
+    
+    /// Returns the JSON representation of the StandardScaler.
+    ///
+    /// # Returns
+    ///
+    /// `Option<Value>` - JSON representation of the scaler
+    fn to_json_opt(&self) -> Option<Value> {
+        Some(self.to_json())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -379,5 +474,89 @@ mod tests {
         assert_abs_diff_eq!(result[[0, 1]], 0.0, epsilon = 1e-10);
         assert_abs_diff_eq!(result[[1, 1]], 0.0, epsilon = 1e-10);
         assert_abs_diff_eq!(result[[2, 1]], 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_standard_scaler_to_json() {
+        let mut scaler = StandardScaler::new();
+        
+        let x = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
+        scaler.fit(&x.view()).unwrap();
+        
+        let json_data = scaler.to_json();
+        
+        // Check that JSON contains the correct data
+        assert_eq!(json_data["type"], "StandardScaler");
+        
+        // Check mean and scale
+        let mean = &json_data["attrs"]["mean_"];
+        let scale = &json_data["attrs"]["scale_"];
+        
+        assert_eq!(mean.as_array().unwrap().len(), 2);
+        assert_eq!(scale.as_array().unwrap().len(), 2);
+        
+        assert_eq!(mean[0], 3.0);
+        assert_eq!(mean[1], 4.0);
+        assert_eq!(scale[0], 2.0);
+        assert_eq!(scale[1], 2.0);
+    }
+
+    #[test]
+    fn test_standard_scaler_from_json() {
+        // Create a JSON representation
+        let json_data = json!({
+            "type": "StandardScaler",
+            "init_params": {},
+            "attrs": {
+                "mean_": [1.0, 2.0],
+                "scale_": [0.5, 1.5]
+            }
+        });
+        
+        // Create scaler from JSON
+        let scaler = StandardScaler::from_json(json_data).unwrap();
+        
+        // Check mean and scale
+        let mean = scaler.mean.as_ref().unwrap();
+        let scale = scaler.scale.as_ref().unwrap();
+        
+        assert_eq!(mean.len(), 2);
+        assert_eq!(scale.len(), 2);
+        
+        assert_eq!(mean[0], 1.0);
+        assert_eq!(mean[1], 2.0);
+        assert_eq!(scale[0], 0.5);
+        assert_eq!(scale[1], 1.5);
+    }
+
+    #[test]
+    fn test_standard_scaler_serialization_roundtrip() {
+        let mut original_scaler = StandardScaler::new();
+        
+        // Fit with data
+        let x = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
+        original_scaler.fit(&x.view()).unwrap();
+        
+        // Convert to JSON and back
+        let json_data = original_scaler.to_json();
+        let restored_scaler = StandardScaler::from_json(json_data).unwrap();
+        
+        // Check that restored scaler has the same parameters
+        let original_mean = original_scaler.mean.as_ref().unwrap();
+        let restored_mean = restored_scaler.mean.as_ref().unwrap();
+        
+        let original_scale = original_scaler.scale.as_ref().unwrap();
+        let restored_scale = restored_scaler.scale.as_ref().unwrap();
+        
+        assert_eq!(original_mean.len(), restored_mean.len());
+        assert_eq!(original_scale.len(), restored_scale.len());
+        
+        for (orig, restored) in original_mean.iter().zip(restored_mean.iter()) {
+            assert_abs_diff_eq!(*orig, *restored, epsilon = 1e-10);
+        }
+        
+        for (orig, restored) in original_scale.iter().zip(restored_scale.iter()) {
+            assert_abs_diff_eq!(*orig, *restored, epsilon = 1e-10);
+        }
     }
 }

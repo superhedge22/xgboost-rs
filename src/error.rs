@@ -25,6 +25,8 @@ pub enum PreprocessingError {
     NoSteps,
     #[error("Model has no predict")]
     NoPredict,
+    #[error("IO error: {0}")]
+    IoError(String),
 }
 
 /// Convenience return type for most operations which can return an `XGBError`.

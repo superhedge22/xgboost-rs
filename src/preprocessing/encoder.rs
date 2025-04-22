@@ -1,4 +1,6 @@
 use ndarray::{s, Array1, Array2, ArrayView2};
+use serde_json::{json, Value};
+use std::any::Any;
 
 use crate::{error::PreprocessingError, parameters::preprocessing::HandleUnknown};
 
@@ -29,6 +31,9 @@ impl OneHotEncoder {
     ///
     /// # Returns
     /// A new instance of OneHotEncoder
+    ///
+    /// # Errors
+    /// Panics if an invalid handle_unknown strategy is provided
     pub fn new(handle_unknown: HandleUnknown) -> Self {
         OneHotEncoder {
             handle_unknown,
@@ -173,6 +178,111 @@ impl OneHotEncoder {
         Ok(result)
     }
     
+    /// Converts the OneHotEncoder to a JSON representation.
+    ///
+    /// This method serializes the complete encoder state to JSON, including:
+    /// - The initialization parameters (handle_unknown)
+    /// - The learned categories for each feature
+    /// - The feature names, if available
+    ///
+    /// # Returns
+    /// A JSON Value containing the serialized encoder
+    pub fn to_json(&self) -> Value {
+        // Convert categories to Vec<Vec<f32>> for serialization
+        let categories_json = if let Some(categories) = &self.categories {
+            // Convert each Array1 to a Vec<f32>
+            categories.iter()
+                .map(|cat_array| cat_array.iter().map(|&c| c).collect::<Vec<f32>>())
+                .collect::<Vec<Vec<f32>>>()
+        } else {
+            Vec::new()
+        };
+
+        // Convert handle_unknown to string
+        let handle_unknown_str = match self.handle_unknown {
+            HandleUnknown::Error => "error",
+            HandleUnknown::Ignore => "ignore",
+        };
+
+        // Create the JSON structure
+        json!({
+            "type": "OneHotEncoder",
+            "init_params": {
+                "handle_unknown": handle_unknown_str
+            },
+            "attrs": {
+                "categories": categories_json,
+                "feature_names_in": self.feature_names_in.clone()
+            }
+        })
+    }
+
+    /// Creates a OneHotEncoder from its JSON representation.
+    ///
+    /// # Arguments
+    /// * `json_data` - The JSON Value containing the serialized encoder state
+    ///
+    /// # Returns
+    /// * `Result<Self, PreprocessingError>` - A new OneHotEncoder instance with restored state,
+    ///   or an error if the JSON data is invalid
+    pub fn from_json(json_data: Value) -> Result<Self, PreprocessingError> {
+        // Parse initialization parameters
+        let init_params = json_data.get("init_params")
+            .ok_or_else(|| PreprocessingError::NotFitted)?;
+            
+        // Parse handle_unknown
+        let handle_unknown_str = init_params.get("handle_unknown")
+            .and_then(|v| v.as_str())
+            .unwrap_or("error");
+            
+        let handle_unknown = match handle_unknown_str {
+            "error" => HandleUnknown::Error,
+            "ignore" => HandleUnknown::Ignore,
+            _ => return Err(PreprocessingError::NotFitted), // Invalid handle_unknown
+        };
+        
+        // Create encoder with init params
+        let mut encoder = OneHotEncoder::new(handle_unknown);
+        
+        // Parse attributes
+        if let Some(attrs) = json_data.get("attrs") {
+            // Parse categories
+            if let Some(cat_array) = attrs.get("categories") {
+                if let Some(cat_array) = cat_array.as_array() {
+                    let mut categories = Vec::with_capacity(cat_array.len());
+                    
+                    for cat in cat_array {
+                        if let Some(values) = cat.as_array() {
+                            let array_values: Vec<f32> = values.iter()
+                                .filter_map(|v| v.as_f64().map(|f| f as f32))
+                                .collect();
+                                
+                            categories.push(Array1::from(array_values));
+                        }
+                    }
+                    
+                    if !categories.is_empty() {
+                        encoder.categories = Some(categories);
+                    }
+                }
+            }
+            
+            // Parse feature names
+            if let Some(names) = attrs.get("feature_names_in") {
+                if let Some(names_array) = names.as_array() {
+                    let feature_names: Vec<String> = names_array.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                        
+                    if !feature_names.is_empty() {
+                        encoder.feature_names_in = Some(feature_names);
+                    }
+                }
+            }
+        }
+        
+        Ok(encoder)
+    }
 }
 
 /// Implementation of the Transformer trait for OneHotEncoder.
@@ -215,6 +325,23 @@ impl Transformer for OneHotEncoder {
     /// * `Err(PreprocessingError)` - If fitting or transformation fails
     fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
         self.fit_transform(x, None)
+    }
+    
+    /// Returns the JSON representation of the OneHotEncoder.
+    ///
+    /// # Returns
+    ///
+    /// `Option<Value>` - JSON representation of the encoder
+    fn to_json_opt(&self) -> Option<Value> {
+        Some(self.to_json())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -410,5 +537,99 @@ mod tests {
             result,
             Err(PreprocessingError::FeatureMismatch(3, 2))
         ));
+    }
+
+    #[test]
+    fn test_one_hot_encoder_to_json() {
+        let mut encoder = OneHotEncoder::new(HandleUnknown::Error);
+        
+        let x = array![[0.0, 1.0], [1.0, 2.0]];
+        let feature_names = vec!["age".to_string(), "education".to_string()];
+        
+        encoder.fit(&x.view(), Some(feature_names)).unwrap();
+        
+        let json_data = encoder.to_json();
+        
+        // Check that JSON contains the correct data
+        assert_eq!(json_data["type"], "OneHotEncoder");
+        assert_eq!(json_data["init_params"]["handle_unknown"], "error");
+        
+        // Check categories
+        let categories = &json_data["attrs"]["categories"];
+        assert_eq!(categories.as_array().unwrap().len(), 2);
+        
+        // Check feature names
+        let names = &json_data["attrs"]["feature_names_in"];
+        assert_eq!(names[0], "age");
+        assert_eq!(names[1], "education");
+    }
+
+    #[test]
+    fn test_one_hot_encoder_from_json() {
+        // Create a JSON representation
+        let json_data = json!({
+            "type": "OneHotEncoder",
+            "init_params": {
+                "handle_unknown": "ignore"
+            },
+            "attrs": {
+                "categories": [
+                    [0.0, 1.0, 2.0],
+                    [1.0, 2.0]
+                ],
+                "feature_names_in": ["feature1", "feature2"]
+            }
+        });
+        
+        // Create encoder from JSON
+        let encoder = OneHotEncoder::from_json(json_data).unwrap();
+        
+        // Check initialization parameters
+        assert_eq!(encoder.handle_unknown, HandleUnknown::Ignore);
+        
+        // Check categories
+        let categories = encoder.categories.as_ref().unwrap();
+        assert_eq!(categories.len(), 2);
+        assert_eq!(categories[0], array![0.0, 1.0, 2.0]);
+        assert_eq!(categories[1], array![1.0, 2.0]);
+        
+        // Check feature names
+        let feature_names = encoder.feature_names_in.as_ref().unwrap();
+        assert_eq!(feature_names, &vec!["feature1".to_string(), "feature2".to_string()]);
+    }
+
+    #[test]
+    fn test_one_hot_encoder_serialization_roundtrip() {
+        let mut original_encoder = OneHotEncoder::new(HandleUnknown::Error);
+        
+        // Fit with data
+        let x = array![[0.0, 1.0], [1.0, 2.0], [2.0, 1.0]];
+        let feature_names = vec!["age".to_string(), "education".to_string()];
+        original_encoder.fit(&x.view(), Some(feature_names)).unwrap();
+        
+        // Convert to JSON and back
+        let json_data = original_encoder.to_json();
+        let restored_encoder = OneHotEncoder::from_json(json_data).unwrap();
+        
+        // Check that restored encoder has the same parameters
+        assert_eq!(restored_encoder.handle_unknown, original_encoder.handle_unknown);
+        
+        // Check categories (they should be the same, but we need to compare values, not references)
+        let original_cats = original_encoder.categories.as_ref().unwrap();
+        let restored_cats = restored_encoder.categories.as_ref().unwrap();
+        assert_eq!(original_cats.len(), restored_cats.len());
+        
+        for (orig, restored) in original_cats.iter().zip(restored_cats.iter()) {
+            assert_eq!(orig.len(), restored.len());
+            for (a, b) in orig.iter().zip(restored.iter()) {
+                assert_eq!(*a, *b);
+            }
+        }
+        
+        // Check feature names
+        assert_eq!(
+            original_encoder.feature_names_in.as_ref().unwrap(),
+            restored_encoder.feature_names_in.as_ref().unwrap()
+        );
     }
 }
