@@ -6,6 +6,9 @@ use serde_json::json;
 
 use crate::error::XGBResult;
 use crate::error::XGBError;
+use crate::types::ArrayView2F;
+use crate::types::Array2F;
+use ndarray::{Array, ShapeBuilder};
 
 static KEY_GROUP_PTR: &str = "group_ptr";
 static KEY_GROUP: &str = "group";
@@ -500,6 +503,22 @@ impl DMatrix {
             array_cstr.as_ptr()
         ))
     }
+
+    /// Create a new `DMatrix` from ndarray ArrayView2F.
+    ///
+    /// The data in the array view is converted to row-major format for XGBoost.
+    pub fn from_array_view(array: &ArrayView2F) -> XGBResult<Self> {
+        // Check if the array is contiguous in memory
+        if array.is_standard_layout() {
+            // If array is already in row-major order, we can use the data directly
+            Self::from_dense(array.as_slice().ok_or(XGBError::new("Array is not contiguous in memory"))?,
+             array.nrows())
+        } else {
+            // If array is not in row-major order, we need to create a copy with proper layout
+            let data: Vec<f32> = array.iter().copied().collect();
+            Self::from_dense(&data, array.nrows())
+        }
+    }
 }
 
 impl Drop for DMatrix {
@@ -675,5 +694,28 @@ mod tests {
         assert_eq!(dmat.slice(&[1, 0]).unwrap().shape(), (2, 3));
         assert_eq!(dmat.slice(&[0, 1, 2]).unwrap().shape(), (3, 3));
         assert_eq!(dmat.slice(&[3, 2, 1]).unwrap().shape(), (3, 3));
+    }
+
+    #[test]
+    fn test_from_array_view() {
+        // Create a 3x2 array with known values
+        let arr = Array2F::from_shape_vec((3, 2), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let view = arr.view();
+        
+        // Create DMatrix from the array view
+        let dmat = DMatrix::from_array_view(&view).unwrap();
+        
+        // Verify dimensions
+        assert_eq!(dmat.num_rows(), 3);
+        assert_eq!(dmat.num_cols(), 2);
+        
+        // Create a non-standard layout array (column-major)
+        let arr_f = Array::from_shape_vec((2, 3).f(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let view_f = arr_f.view();
+        
+        // This should still work by creating a copy with proper layout
+        let dmat_f = DMatrix::from_array_view(&view_f).unwrap();
+        assert_eq!(dmat_f.num_rows(), 2);
+        assert_eq!(dmat_f.num_cols(), 3);
     }
 }

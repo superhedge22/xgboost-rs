@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use std::any::Any;
 
-use ndarray::{s, Array1, Array2, ArrayView2};
+use ndarray::s;
+use serde_json::{json, Value};
 
 use crate::{error::PreprocessingError, parameters::preprocessing::ImputationStrategy};
+use crate::types::{Array1F, Array2F, ArrayView2F};
 
 use super::Transformer;
 
@@ -27,13 +30,15 @@ use super::Transformer;
 /// let data = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
 ///
 /// // Fit and transform the data
-/// let result = imputer.fit_transform(&data.view()).unwrap();
+/// let result = imputer.fit_transform(&data.view(), None).unwrap();
 /// ```
 pub struct SimpleImputer {
     /// The imputation strategy to use for missing values
     strategy: ImputationStrategy,
     /// The imputation values calculated during fitting for each feature
-    statistics: Option<Array1<f32>>,
+    statistics: Option<Array1F>,
+    /// Optional names of the input features
+    columns: Option<Vec<String>>,
 }
 
 impl SimpleImputer {
@@ -60,10 +65,15 @@ impl SimpleImputer {
     /// // Create imputer with constant value strategy
     /// let constant_imputer = SimpleImputer::new(ImputationStrategy::Constant(0.0));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if an invalid strategy is provided
     pub fn new(strategy: ImputationStrategy) -> Self {
         SimpleImputer {
             strategy,
             statistics: None,
+            columns: None,
         }
     }
     
@@ -75,6 +85,7 @@ impl SimpleImputer {
     /// # Parameters
     ///
     /// * `x` - The input data as a 2D array view, where each column is a feature and each row is a sample
+    /// * `feature_names` - Optional names for input features
     ///
     /// # Returns
     ///
@@ -94,11 +105,11 @@ impl SimpleImputer {
     ///
     /// let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
     /// let data = array![[1.0, 2.0], [3.0, f32::NAN], [f32::NAN, 6.0]];
-    /// imputer.fit(&data.view()).unwrap();
+    /// imputer.fit(&data.view(), None).unwrap();
     /// ```
-    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<&mut Self, PreprocessingError> {
+    pub fn fit(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
         let n_features = x.ncols();
-        let mut stats = Array1::zeros(n_features);
+        let mut stats = Array1F::zeros(n_features);
         
         for j in 0..n_features {
             let column = x.slice(s![.., j]);
@@ -166,6 +177,8 @@ impl SimpleImputer {
         }
         
         self.statistics = Some(stats);
+        self.columns = feature_names;
+        
         Ok(self)
     }
     
@@ -197,12 +210,12 @@ impl SimpleImputer {
     ///
     /// let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
     /// let train_data = array![[1.0, 2.0], [3.0, 4.0]];
-    /// imputer.fit(&train_data.view()).unwrap();
+    /// imputer.fit(&train_data.view(), None).unwrap();
     ///
     /// let test_data = array![[f32::NAN, 5.0], [6.0, f32::NAN]];
     /// let transformed = imputer.transform(&test_data.view()).unwrap();
     /// ```
-    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    pub fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         let stats = self.statistics.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -230,10 +243,11 @@ impl SimpleImputer {
     /// # Parameters
     ///
     /// * `x` - The input data to fit and transform
+    /// * `feature_names` - Optional names for input features
     ///
     /// # Returns
     ///
-    /// * `Result<Array2<f64>, PreprocessingError>` - The transformed data with imputed values on success, or an error
+    /// * `Result<Array2<f32>, PreprocessingError>` - The transformed data with imputed values on success, or an error
     ///
     /// # Errors
     ///
@@ -249,14 +263,126 @@ impl SimpleImputer {
     ///
     /// let mut imputer = SimpleImputer::new(ImputationStrategy::Median);
     /// let data = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
-    /// let result = imputer.fit_transform(&data.view()).unwrap();
+    /// let result = imputer.fit_transform(&data.view(), None).unwrap();
     /// ```
-    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
-        self.fit(x)?;
+    pub fn fit_transform(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<Array2F, PreprocessingError> {
+        self.fit(x, feature_names)?;
         self.transform(&x.view())
     }
 
-    
+    /// Converts the SimpleImputer to a JSON representation.
+    ///
+    /// This method serializes the complete imputer state to JSON, including:
+    /// - The initialization parameters (strategy)
+    /// - The learned statistics for each feature
+    /// - The feature names, if available
+    ///
+    /// # Returns
+    /// A JSON Value containing the serialized imputer
+    pub fn to_json(&self) -> Value {
+        // Convert statistics to Vec<f32> for serialization
+        let statistics_json = if let Some(stats) = &self.statistics {
+            stats.iter().map(|&s| s).collect::<Vec<f32>>()
+        } else {
+            Vec::new()
+        };
+
+        // Convert strategy to string and fill_value
+        let (strategy_str, fill_value) = match self.strategy {
+            ImputationStrategy::Mean => ("mean", None),
+            ImputationStrategy::Median => ("median", None),
+            ImputationStrategy::MostFrequent => ("most_frequent", None),
+            ImputationStrategy::Constant(val) => ("constant", Some(val)),
+        };
+
+        // Create the init_params object
+        let mut init_params = json!({
+            "strategy": strategy_str
+        });
+
+        // Add fill_value if present
+        if let Some(val) = fill_value {
+            init_params["fill_value"] = json!(val);
+        }
+
+        // Create the JSON structure
+        json!({
+            "type": "SimpleImputer",
+            "init_params": init_params,
+            "attrs": {
+                "statistics_": statistics_json,
+                "columns": self.columns.clone()
+            }
+        })
+    }
+
+    /// Creates a SimpleImputer from its JSON representation.
+    ///
+    /// # Arguments
+    /// * `json_data` - The JSON Value containing the serialized imputer state
+    ///
+    /// # Returns
+    /// * `Result<Self, PreprocessingError>` - A new SimpleImputer instance with restored state,
+    ///   or an error if the JSON data is invalid
+    pub fn from_json(json_data: Value) -> Result<Self, PreprocessingError> {
+        // Parse initialization parameters
+        let init_params = json_data.get("init_params")
+            .ok_or_else(|| PreprocessingError::NotFitted)?;
+            
+        // Parse strategy
+        let strategy_str = init_params.get("strategy")
+            .and_then(|v| v.as_str())
+            .ok_or(PreprocessingError::NotFitted)?;
+
+        // Parse fill_value if strategy is 'constant'
+        let strategy = match strategy_str {
+            "mean" => ImputationStrategy::Mean,
+            "median" => ImputationStrategy::Median,
+            "most_frequent" => ImputationStrategy::MostFrequent,
+            "constant" => {
+                let fill_value = init_params.get("fill_value")
+                    .and_then(|v| v.as_f64())
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0);
+                ImputationStrategy::Constant(fill_value)
+            },
+            _ => return Err(PreprocessingError::NotFitted), // Invalid strategy
+        };
+        
+        // Create imputer with init params
+        let mut imputer = SimpleImputer::new(strategy);
+        
+        // Parse attributes
+        if let Some(attrs) = json_data.get("attrs") {
+            // Parse statistics
+            if let Some(stats_array) = attrs.get("statistics_") {
+                if let Some(values) = stats_array.as_array() {
+                    let statistics: Vec<f32> = values.iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect();
+                        
+                    if !statistics.is_empty() {
+                        imputer.statistics = Some(Array1F::from(statistics));
+                    }
+                }
+            }
+            
+            // Parse column names
+            if let Some(columns) = attrs.get("columns") {
+                if let Some(columns_array) = columns.as_array() {
+                    let feature_names: Vec<String> = columns_array.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                        
+                    if !feature_names.is_empty() {
+                        imputer.columns = Some(feature_names);
+                    }
+                }
+            }
+        }
+        
+        Ok(imputer)
+    }
 }
 
 /// Implementation of the `Transformer` trait for `SimpleImputer`.
@@ -272,8 +398,8 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2<f32>) -> Result<(), PreprocessingError> {
-        self.fit(x)?;
+    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
+        self.fit(x, None)?;
         Ok(())
     }
 
@@ -285,8 +411,8 @@ impl Transformer for SimpleImputer {
     ///
     /// # Returns
     ///
-    /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
+    /// `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
+    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
         self.transform(x)
     }
 
@@ -298,9 +424,26 @@ impl Transformer for SimpleImputer {
     ///
     /// # Returns
     ///
-    /// `Result<Array2<f64>, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2<f32>) -> Result<Array2<f32>, PreprocessingError> {
-        self.fit_transform(x)
+    /// `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
+    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+        self.fit_transform(x, None)
+    }
+    
+    /// Returns the JSON representation of the SimpleImputer.
+    ///
+    /// # Returns
+    ///
+    /// `Option<Value>` - JSON representation of the imputer
+    fn to_json_opt(&self) -> Option<Value> {
+        Some(self.to_json())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -320,13 +463,27 @@ mod tests {
     }
 
     #[test]
+    fn test_simple_imputer_invalid_strategy_json() {
+        let json_data = json!({
+            "type": "SimpleImputer",
+            "init_params": {
+                "strategy": "invalid_strategy"
+            }
+        });
+        
+        // This should return an error
+        let result = SimpleImputer::from_json(json_data);
+        assert!(matches!(result, Err(PreprocessingError::NotFitted)));
+    }
+
+    #[test]
     fn test_simple_imputer_fit_mean() {
         let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
         
         // Array with missing values
         let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         
-        imputer.fit(&x.view()).unwrap();
+        imputer.fit(&x.view(), None).unwrap();
         
         // Check learned statistics
         let stats = imputer.statistics.as_ref().unwrap();
@@ -342,7 +499,7 @@ mod tests {
         // Array with missing values
         let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN], [5.0, 8.0]];
         
-        imputer.fit(&x.view()).unwrap();
+        imputer.fit(&x.view(), None).unwrap();
         
         // Check learned statistics
         let stats = imputer.statistics.as_ref().unwrap();
@@ -364,7 +521,7 @@ mod tests {
             [5.0, 3.0]
         ];
         
-        imputer.fit(&x.view()).unwrap();
+        imputer.fit(&x.view(), None).unwrap();
         
         // Check learned statistics
         let stats = imputer.statistics.as_ref().unwrap();
@@ -380,7 +537,7 @@ mod tests {
         // Array with missing values
         let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         
-        imputer.fit(&x.view()).unwrap();
+        imputer.fit(&x.view(), None).unwrap();
         
         // Check learned statistics
         let stats = imputer.statistics.as_ref().unwrap();
@@ -395,7 +552,7 @@ mod tests {
         
         // Fit with some data
         let x_train = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
-        imputer.fit(&x_train.view()).unwrap();
+        imputer.fit(&x_train.view(), None).unwrap();
         
         // Transform with missing values
         let x_test = array![[f32::NAN, 1.0], [3.0, f32::NAN]];
@@ -416,7 +573,7 @@ mod tests {
         let x = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
         
         // Apply fit_transform
-        let result = imputer.fit_transform(&x.view()).unwrap();
+        let result = imputer.fit_transform(&x.view(), None).unwrap();
         
         // Check transformed values
         assert!((result[[0, 0]] - 1.0).abs() < 1e-10);  // Not replaced
@@ -445,7 +602,7 @@ mod tests {
         
         // Fit with 2 features
         let x_train = array![[1.0, 2.0], [3.0, 4.0]];
-        imputer.fit(&x_train.view()).unwrap();
+        imputer.fit(&x_train.view(), None).unwrap();
         
         // Transform with 3 features
         let x_test = array![[1.0, 2.0, 3.0]];
@@ -465,7 +622,7 @@ mod tests {
         // Column with all NaN values
         let x = array![[1.0, f32::NAN], [2.0, f32::NAN], [3.0, f32::NAN]];
         
-        imputer.fit(&x.view()).unwrap();
+        imputer.fit(&x.view(), None).unwrap();
         
         // Check statistics - second value should be NaN
         let stats = imputer.statistics.as_ref().unwrap();
@@ -477,5 +634,97 @@ mod tests {
         
         assert!(!result[[0, 0]].is_nan());
         assert!(result[[0, 1]].is_nan());
+    }
+
+    #[test]
+    fn test_simple_imputer_to_json() {
+        let mut imputer = SimpleImputer::new(ImputationStrategy::Mean);
+        
+        // Fit with data and feature names
+        let x = array![[1.0, 2.0], [3.0, 4.0], [f32::NAN, f32::NAN]];
+        let feature_names = vec!["feature1".to_string(), "feature2".to_string()];
+        imputer.fit(&x.view(), Some(feature_names)).unwrap();
+        
+        let json_data = imputer.to_json();
+        
+        // Check that JSON contains the correct data
+        assert_eq!(json_data["type"], "SimpleImputer");
+        assert_eq!(json_data["init_params"]["strategy"], "mean");
+        
+        // Check statistics
+        let statistics = &json_data["attrs"]["statistics_"];
+        assert_eq!(statistics.as_array().unwrap().len(), 2);
+        
+        // Check feature names
+        let columns = &json_data["attrs"]["columns"];
+        assert_eq!(columns[0], "feature1");
+        assert_eq!(columns[1], "feature2");
+    }
+
+    #[test]
+    fn test_simple_imputer_from_json() {
+        // Create a JSON representation with constant strategy
+        let json_data = json!({
+            "type": "SimpleImputer",
+            "init_params": {
+                "strategy": "constant",
+                "fill_value": 99.5
+            },
+            "attrs": {
+                "statistics_": [99.5, 99.5],
+                "columns": ["feature1", "feature2"]
+            }
+        });
+        
+        // Create imputer from JSON
+        let imputer = SimpleImputer::from_json(json_data).unwrap();
+        
+        // Check initialization parameters
+        match imputer.strategy {
+            ImputationStrategy::Constant(val) => assert_eq!(val, 99.5),
+            _ => panic!("Expected Constant strategy"),
+        }
+        
+        // Check statistics
+        let statistics = imputer.statistics.as_ref().unwrap();
+        assert_eq!(statistics.len(), 2);
+        assert_eq!(statistics[0], 99.5);
+        assert_eq!(statistics[1], 99.5);
+        
+        // Check feature names
+        let columns = imputer.columns.as_ref().unwrap();
+        assert_eq!(columns, &vec!["feature1".to_string(), "feature2".to_string()]);
+    }
+
+    #[test]
+    fn test_simple_imputer_serialization_roundtrip() {
+        let mut original_imputer = SimpleImputer::new(ImputationStrategy::Median);
+        
+        // Fit with data
+        let x = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
+        let feature_names = vec!["age".to_string(), "weight".to_string()];
+        original_imputer.fit(&x.view(), Some(feature_names)).unwrap();
+        
+        // Convert to JSON and back
+        let json_data = original_imputer.to_json();
+        let restored_imputer = SimpleImputer::from_json(json_data).unwrap();
+        
+        // Check that restored imputer has the same parameters
+        assert!(matches!(restored_imputer.strategy, ImputationStrategy::Median));
+        
+        // Check statistics (they should be the same)
+        let original_stats = original_imputer.statistics.as_ref().unwrap();
+        let restored_stats = restored_imputer.statistics.as_ref().unwrap();
+        assert_eq!(original_stats.len(), restored_stats.len());
+        
+        for (orig, restored) in original_stats.iter().zip(restored_stats.iter()) {
+            assert!((orig - restored).abs() < 1e-10);
+        }
+        
+        // Check feature names
+        assert_eq!(
+            original_imputer.columns.as_ref().unwrap(),
+            restored_imputer.columns.as_ref().unwrap()
+        );
     }
 }
