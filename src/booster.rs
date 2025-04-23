@@ -662,7 +662,7 @@ impl Booster {
         out_shape: &[u64; 2],
         out_dim: &mut u64,
     ) -> XGBResult<Array2F> {
-        let json_config = "{\"type\": 0,\"training\": false,\"iteration_begin\": 0,\"iteration_end\": 0,\"strict_shape\": true}".to_string();
+        let json_config = "{\"type\": 0,\"training\": false,\"iteration_begin\": 0,\"iteration_end\": 0,\"strict_shape\": false}".to_string();
 
         let mut out_result = ptr::null();
 

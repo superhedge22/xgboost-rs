@@ -5,7 +5,7 @@ use ndarray::s;
 use serde_json::{json, Value};
 
 use crate::{error::PreprocessingError, parameters::preprocessing::ImputationStrategy};
-use crate::types::{Array1F, Array2F, ArrayView2F};
+use crate::types::{Array1, Array1F, Array2, Array2F, ArrayView2, ArrayView2F};
 
 use super::Transformer;
 
@@ -36,7 +36,7 @@ pub struct SimpleImputer {
     /// The imputation strategy to use for missing values
     strategy: ImputationStrategy,
     /// The imputation values calculated during fitting for each feature
-    statistics: Option<Array1F>,
+    statistics: Option<Array1<f64>>,
     /// Optional names of the input features
     columns: Option<Vec<String>>,
 }
@@ -107,9 +107,9 @@ impl SimpleImputer {
     /// let data = array![[1.0, 2.0], [3.0, f32::NAN], [f32::NAN, 6.0]];
     /// imputer.fit(&data.view(), None).unwrap();
     /// ```
-    pub fn fit(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
+    pub fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
         let n_features = x.ncols();
-        let mut stats = Array1F::zeros(n_features);
+        let mut stats = Array1::zeros(n_features);
         
         for j in 0..n_features {
             let column = x.slice(s![.., j]);
@@ -117,27 +117,27 @@ impl SimpleImputer {
             match &self.strategy {
                 ImputationStrategy::Mean => {
                     // Filter out NaN values and compute mean
-                    let valid_values: Vec<f32> = column.iter()
-                        .filter(|&&x| !x.is_nan())
-                        .copied()
+                    let valid_values: Vec<f64> = column.iter()
+                        .filter(|&&x| !x.into().is_nan())
+                        .map(|&x| x.into())
                         .collect();
                     
                     if valid_values.is_empty() {
-                        stats[j] = f32::NAN;
+                        stats[j] = f64::NAN;
                     } else {
-                        let sum: f32 = valid_values.iter().sum();
-                        stats[j] = sum / valid_values.len() as f32;
+                        let sum: f64 = valid_values.iter().sum();
+                        stats[j] = sum / valid_values.len() as f64;
                     }
                 },
                 ImputationStrategy::Median => {
                     // Filter out NaN values, sort, and find median
-                    let mut valid_values: Vec<f32> = column.iter()
-                        .filter(|&&x| !x.is_nan())
-                        .copied()
+                    let mut valid_values: Vec<f64> = column.iter()
+                        .filter(|&&x| !x.into().is_nan())
+                        .map(|&x| x.into())
                         .collect();
                     
                     if valid_values.is_empty() {
-                        stats[j] = f32::NAN;
+                        stats[j] = f64::NAN;
                     } else {
                         valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         let mid = valid_values.len() / 2;
@@ -149,25 +149,25 @@ impl SimpleImputer {
                     }
                 },
                 ImputationStrategy::MostFrequent => {
-                    let mut value_counts: HashMap<u32, usize> = HashMap::new();
+                    let mut value_counts: HashMap<u64, usize> = HashMap::new();
                     
                     for &val in column.iter() {
-                        if !val.is_nan() {
+                        if !val.into().is_nan() {
                             // Use bit representation as key to handle floating point comparisons
-                            let bits = val.to_bits();
+                            let bits = val.into().to_bits();
                             *value_counts.entry(bits).or_insert(0) += 1;
                         }
                     }
                     
                     if value_counts.is_empty() {
-                        stats[j] = f32::NAN;
+                        stats[j] = f64::NAN;
                     } else {
                         // Find most frequent value
                         let (&bits, _) = value_counts.iter()
                             .max_by_key(|&(_, count)| *count)
                             .ok_or(PreprocessingError::MostFrequent)?;
                         
-                        stats[j] = f32::from_bits(bits);
+                        stats[j] = f64::from_bits(bits);
                     }
                 },
                 ImputationStrategy::Constant(value) => {
@@ -215,7 +215,7 @@ impl SimpleImputer {
     /// let test_data = array![[f32::NAN, 5.0], [6.0, f32::NAN]];
     /// let transformed = imputer.transform(&test_data.view()).unwrap();
     /// ```
-    pub fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    pub fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         let stats = self.statistics.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -223,7 +223,7 @@ impl SimpleImputer {
             return Err(PreprocessingError::FeatureMismatch(x.ncols(), stats.len()));
         }
         
-        let mut result = x.to_owned();        
+        let mut result = x.mapv(|x| x.into());
         // Replace NaN values with the corresponding statistic
         for i in 0..result.nrows() {
             for j in 0..result.ncols() {
@@ -265,7 +265,7 @@ impl SimpleImputer {
     /// let data = array![[1.0, 2.0], [f32::NAN, 3.0], [4.0, f32::NAN]];
     /// let result = imputer.fit_transform(&data.view(), None).unwrap();
     /// ```
-    pub fn fit_transform(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<Array2F, PreprocessingError> {
+    pub fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>, feature_names: Option<Vec<String>>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit(x, feature_names)?;
         self.transform(&x.view())
     }
@@ -280,9 +280,9 @@ impl SimpleImputer {
     /// # Returns
     /// A JSON Value containing the serialized imputer
     pub fn to_json(&self) -> Value {
-        // Convert statistics to Vec<f32> for serialization
+        // Convert statistics to Vec<f64> for serialization
         let statistics_json = if let Some(stats) = &self.statistics {
-            stats.iter().map(|&s| s).collect::<Vec<f32>>()
+            stats.iter().map(|&s| s).collect::<Vec<f64>>()
         } else {
             Vec::new()
         };
@@ -342,7 +342,6 @@ impl SimpleImputer {
             "constant" => {
                 let fill_value = init_params.get("fill_value")
                     .and_then(|v| v.as_f64())
-                    .map(|v| v as f32)
                     .unwrap_or(0.0);
                 ImputationStrategy::Constant(fill_value)
             },
@@ -357,12 +356,12 @@ impl SimpleImputer {
             // Parse statistics
             if let Some(stats_array) = attrs.get("statistics_") {
                 if let Some(values) = stats_array.as_array() {
-                    let statistics: Vec<f32> = values.iter()
-                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    let statistics: Vec<f64> = values.iter()
+                        .filter_map(|v| v.as_f64())
                         .collect();
                         
                     if !statistics.is_empty() {
-                        imputer.statistics = Some(Array1F::from(statistics));
+                        imputer.statistics = Some(Array1::from(statistics));
                     }
                 }
             }
@@ -398,7 +397,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
+    fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<(), PreprocessingError> {
         self.fit(x, None)?;
         Ok(())
     }
@@ -412,7 +411,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.transform(x)
     }
 
@@ -425,7 +424,7 @@ impl Transformer for SimpleImputer {
     /// # Returns
     ///
     /// `Result<Array2<f32>, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit_transform(x, None)
     }
     

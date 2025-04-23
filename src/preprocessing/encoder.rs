@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::any::Any;
 
 use crate::{error::PreprocessingError, parameters::preprocessing::HandleUnknown};
-use crate::types::{Array2F, ArrayView2F, Array1F};
+use crate::types::{Array1, Array1F, Array2, Array2F, ArrayView2, ArrayView2F};
 
 use super::Transformer;
 
@@ -18,7 +18,7 @@ use super::Transformer;
 /// * `feature_names_in` - Optional names of the input features
 pub struct OneHotEncoder {
     handle_unknown: HandleUnknown,
-    categories: Option<Vec<Array1F>>,
+    categories: Option<Vec<Array1<f64>>>,
     feature_names_in: Option<Vec<String>>,
 }
 
@@ -52,7 +52,7 @@ impl OneHotEncoder {
     /// # Returns
     /// * `Ok(&mut Self)` - Reference to self for method chaining
     /// * `Err(PreprocessingError)` - If the fitting process fails
-    pub fn fit(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
+    pub fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>, feature_names: Option<Vec<String>>) -> Result<&mut Self, PreprocessingError> {
         let n_features = x.ncols();
         let mut categories = Vec::with_capacity(n_features);
         
@@ -60,17 +60,17 @@ impl OneHotEncoder {
             let column = x.slice(s![.., j]);
             
             // Find unique categories
-            let mut unique_cats: Vec<f32> = Vec::new();
+            let mut unique_cats: Vec<f64> = Vec::new();
             for &val in column.iter() {
-                if !unique_cats.contains(&val) {
-                    unique_cats.push(val);
+                let val_f64: f64 = val.into();
+                if !unique_cats.contains(&val_f64) {
+                    unique_cats.push(val_f64);
                 }
             }
-            
             // Sort categories
             unique_cats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             
-            categories.push(Array1F::from(unique_cats));
+            categories.push(Array1::from(unique_cats));
         }
         
         self.categories = Some(categories);
@@ -90,7 +90,7 @@ impl OneHotEncoder {
     ///   - The encoder hasn't been fitted
     ///   - The number of features doesn't match what was learned during fit
     ///   - Unknown categories are encountered with `HandleUnknown::Error`
-    pub fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    pub fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         let categories = self.categories.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -102,14 +102,14 @@ impl OneHotEncoder {
         let n_samples = x.nrows();
         let n_features_out = categories.iter().map(|cats| cats.len()).sum();
         
-        let mut result = Array2F::zeros((n_samples, n_features_out));
+        let mut result = Array2::zeros((n_samples, n_features_out));
         let mut col_idx = 0;
         for j in 0..x.ncols() {
             let cats = &categories[j];
             
             for i in 0..n_samples {
                 let val = x[[i, j]];
-                let cat_idx = cats.iter().position(|&c| c == val);
+                let cat_idx = cats.iter().position(|&c| c == val.into());
                 
                 match cat_idx {
                     Some(idx) => {
@@ -119,7 +119,7 @@ impl OneHotEncoder {
                         // Handle unknown category
                         match self.handle_unknown {
                             HandleUnknown::Error => {
-                                return Err(PreprocessingError::UnknownCategory(val as f64, j));
+                                return Err(PreprocessingError::UnknownCategory(val.into(), j));
                             },
                             HandleUnknown::Ignore => {
                                 // leave as 0 (already done by initializing with zeros)
@@ -144,7 +144,7 @@ impl OneHotEncoder {
     /// # Returns
     /// * `Ok(Array2<f64>)` - One-hot encoded data
     /// * `Err(PreprocessingError)` - If fitting or transformation fails
-    pub fn fit_transform(&mut self, x: &ArrayView2F, feature_names: Option<Vec<String>>) -> Result<Array2F, PreprocessingError> {
+    pub fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>, feature_names: Option<Vec<String>>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit(x, feature_names)?;
         self.transform(&x.view())
     }
@@ -189,12 +189,12 @@ impl OneHotEncoder {
     /// # Returns
     /// A JSON Value containing the serialized encoder
     pub fn to_json(&self) -> Value {
-        // Convert categories to Vec<Vec<f32>> for serialization
+        // Convert categories to Vec<Vec<f64>> for serialization
         let categories_json = if let Some(categories) = &self.categories {
-            // Convert each Array1 to a Vec<f32>
+            // Convert each Array1 to a Vec<f64>
             categories.iter()
-                .map(|cat_array| cat_array.iter().map(|&c| c).collect::<Vec<f32>>())
-                .collect::<Vec<Vec<f32>>>()
+                .map(|cat_array| cat_array.iter().map(|&c| c.into()).collect::<Vec<f64>>())
+                .collect::<Vec<Vec<f64>>>()
         } else {
             Vec::new()
         };
@@ -254,11 +254,11 @@ impl OneHotEncoder {
                     
                     for cat in cat_array {
                         if let Some(values) = cat.as_array() {
-                            let array_values: Vec<f32> = values.iter()
-                                .filter_map(|v| v.as_f64().map(|f| f as f32))
+                            let array_values: Vec<f64> = values.iter()
+                                .filter_map(|v| v.as_f64())
                                 .collect();
                                 
-                            categories.push(Array1F::from(array_values));
+                            categories.push(Array1::from(array_values));
                         }
                     }
                     
@@ -298,7 +298,7 @@ impl Transformer for OneHotEncoder {
     /// # Returns
     /// * `Ok(())` - On success
     /// * `Err(PreprocessingError)` - If fitting fails
-    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
+    fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<(), PreprocessingError> {
         self.fit(x, None)?;
         Ok(())
     }
@@ -312,7 +312,7 @@ impl Transformer for OneHotEncoder {
     /// # Returns
     /// * `Ok(Array2<f64>)` - Transformed data
     /// * `Err(PreprocessingError)` - If transformation fails
-    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.transform(x)
     }
 
@@ -324,7 +324,7 @@ impl Transformer for OneHotEncoder {
     /// # Returns
     /// * `Ok(Array2<f64>)` - Transformed data
     /// * `Err(PreprocessingError)` - If fitting or transformation fails
-    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit_transform(x, None)
     }
     

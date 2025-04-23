@@ -1,4 +1,4 @@
-use crate::error::PreprocessingError;
+use crate::{error::PreprocessingError, types::{Array1, Array2, ArrayView2}};
 use ndarray::Axis;
 use serde_json::{json, Value};
 use std::any::Any;
@@ -27,9 +27,9 @@ use super::Transformer;
 /// ```
 pub struct StandardScaler {
     /// The mean of each feature, computed during fitting
-    mean: Option<Array1F>,
+    mean: Option<Array1<f64>>,
     /// The standard deviation of each feature, computed during fitting
-    scale: Option<Array1F>,
+    scale: Option<Array1<f64>>,
 }
 
 impl StandardScaler {
@@ -81,16 +81,18 @@ impl StandardScaler {
     /// let data = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
     /// scaler.fit(&data.view()).unwrap();
     /// ```
-    fn fit(&mut self, x: &ArrayView2F) -> Result<&mut Self, PreprocessingError> {
+    fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<&mut Self, PreprocessingError> {
         if x.nrows() == 0 {
             return Err(PreprocessingError::EmptyArray);
         }
+
+        let x_f64 = x.mapv(Into::into);
         
-        let mean = x.mean_axis(Axis(0))
+        let mean = x_f64.mean_axis(Axis(0))
             .ok_or(PreprocessingError::ComputeMean)?;
         
-        let var = x.var_axis(Axis(0), 1.0);
-        let mut scale = var.mapv(f32::sqrt);
+        let var = x_f64.var_axis(Axis(0), 1.0);
+        let mut scale = var.mapv(f64::sqrt);
         
         // Handle zeros in scale (avoid division by zero)
         for val in scale.iter_mut() {
@@ -138,7 +140,7 @@ impl StandardScaler {
     /// let test_data = array![[0.0, 0.0], [10.0, 10.0]];
     /// let scaled_data = scaler.transform(&test_data.view()).unwrap();
     /// ```
-    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         let mean = self.mean.as_ref()
             .ok_or(PreprocessingError::NotFitted)?;
         
@@ -149,12 +151,13 @@ impl StandardScaler {
         }
         
         // Create output array
-        let mut result = Array2F::zeros((x.nrows(), x.ncols()));
+        let mut result: Array2<f64> = Array2::zeros((x.nrows(), x.ncols()));
         
         // Apply transformation: (X - mean) / std
         for i in 0..x.nrows() {
             for j in 0..x.ncols() {
-                result[[i, j]] = (x[[i, j]] - mean[j]) / scale[j];
+                let value: f64 = x[[i, j]].into();
+                result[[i, j]] = (value - mean[j]) / scale[j];
             }
         }
         
@@ -188,9 +191,9 @@ impl StandardScaler {
     /// let data = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
     /// let scaled_data = scaler.fit_transform(&data.view()).unwrap();
     /// ```
-    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit(x)?;
-        self.transform(&x.view())
+        self.transform(x)
     }
 
     /// Converts the StandardScaler to a JSON representation.
@@ -203,13 +206,13 @@ impl StandardScaler {
     pub fn to_json(&self) -> Value {
         // Convert mean and scale to Vec<f32> for serialization
         let mean_json = if let Some(mean) = &self.mean {
-            mean.iter().copied().collect::<Vec<f32>>()
+            mean.iter().copied().collect::<Vec<f64>>()
         } else {
             Vec::new()
         };
 
         let scale_json = if let Some(scale) = &self.scale {
-            scale.iter().copied().collect::<Vec<f32>>()
+            scale.iter().copied().collect::<Vec<f64>>()
         } else {
             Vec::new()
         };
@@ -242,12 +245,12 @@ impl StandardScaler {
             // Parse mean
             if let Some(mean_array) = attrs.get("mean_") {
                 if let Some(values) = mean_array.as_array() {
-                    let mean_values: Vec<f32> = values.iter()
-                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    let mean_values: Vec<f64> = values.iter()
+                        .filter_map(|v| v.as_f64())
                         .collect();
                         
                     if !mean_values.is_empty() {
-                        scaler.mean = Some(Array1F::from(mean_values));
+                        scaler.mean = Some(Array1::from(mean_values));
                     }
                 }
             }
@@ -255,12 +258,12 @@ impl StandardScaler {
             // Parse scale
             if let Some(scale_array) = attrs.get("scale_") {
                 if let Some(values) = scale_array.as_array() {
-                    let scale_values: Vec<f32> = values.iter()
-                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    let scale_values: Vec<f64> = values.iter()
+                        .filter_map(|v| v.as_f64())
                         .collect();
                         
                     if !scale_values.is_empty() {
-                        scaler.scale = Some(Array1F::from(scale_values));
+                        scaler.scale = Some(Array1::from(scale_values));
                     }
                 }
             }
@@ -283,7 +286,7 @@ impl Transformer for StandardScaler {
     /// # Returns
     ///
     /// `Result<(), PreprocessingError>` - Success or an error
-    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
+    fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<(), PreprocessingError> {
         self.fit(x)?;
         Ok(())
     }
@@ -297,7 +300,7 @@ impl Transformer for StandardScaler {
     /// # Returns
     ///
     /// `Result<Array2F, PreprocessingError>` - The transformed data or an error
-    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.transform(x)
     }
 
@@ -310,7 +313,7 @@ impl Transformer for StandardScaler {
     /// # Returns
     ///
     /// `Result<Array2F, PreprocessingError>` - The transformed data or an error
-    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit_transform(x)
     }
     
@@ -367,7 +370,7 @@ mod tests {
     #[test]
     fn test_standard_scaler_fit_empty_array() {
         let mut scaler = StandardScaler::new();
-        let x = Array2F::zeros((0, 2));
+        let x: Array2<f64> = Array2::zeros((0, 2));
         
         let result = scaler.fit(&x.view());
         assert!(matches!(result, Err(PreprocessingError::EmptyArray)));

@@ -108,10 +108,11 @@ impl DMatrix {
 
     pub fn from_dense(data: &[f32], num_rows: usize) -> XGBResult<Self> {
         let mut handle = ptr::null_mut();
+        let num_cols = if num_rows == 0 { 0 } else { data.len() / num_rows };
         xgb_call!(xgboost_rs_sys::XGDMatrixCreateFromMat(
             data.as_ptr(),
             num_rows as xgboost_rs_sys::bst_ulong,
-            (data.len() / num_rows) as xgboost_rs_sys::bst_ulong,
+            num_cols as xgboost_rs_sys::bst_ulong,
             0.0, // TODO: can values be missing here?
             &mut handle
         ))?;

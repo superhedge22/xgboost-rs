@@ -2,10 +2,10 @@ use serde_json::{json, Value};
 use std::any::Any;
 
 use crate::error::PreprocessingError;
-use crate::types::{Array2F, ArrayView2F};
+use crate::types::{Array2, ArrayView2};
 
 use super::pipeline::Pipeline;
-use super::{extract_columns, horizontal_concat, Transformer};
+use super::{extract_columns, horizontal_concat, Transformer, TransformerType};
 use super::scaler::StandardScaler;
 use super::imputer::SimpleImputer;
 use super::encoder::OneHotEncoder;
@@ -22,12 +22,12 @@ use super::encoder::OneHotEncoder;
 /// use ndarray::{array, ArrayView2};
 /// use xgboostrs::preprocessing::transform::ColumnTransformer;
 /// use xgboostrs::preprocessing::scaler::StandardScaler;
-/// use xgboostrs::preprocessing::Transformer;
+/// use xgboostrs::preprocessing::{Transformer, TransformerType};
 ///
 /// // Create transformers for different column subsets
 /// let transformers = vec![
-///     ("scale_first".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0]),
-///     ("scale_last".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![1]),
+///     ("scale_first".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+///     ("scale_last".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1]),
 /// ];
 ///
 /// let mut transformer = ColumnTransformer::new(transformers);
@@ -43,7 +43,7 @@ use super::encoder::OneHotEncoder;
 /// let transformed = transformer.fit_transform(&data.view()).unwrap();
 /// ```
 pub struct ColumnTransformer {
-    transformers: Vec<(String, Box<dyn Transformer>, Vec<usize>)>,
+    transformers: Vec<(String, TransformerType, Vec<usize>)>,
     fitted: bool,
 }
 
@@ -64,17 +64,17 @@ impl ColumnTransformer {
     /// ```
     /// use xgboostrs::preprocessing::transform::ColumnTransformer;
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
-    /// use xgboostrs::preprocessing::Transformer;
+    /// use xgboostrs::preprocessing::{Transformer, TransformerType};
     ///
     /// // Create transformers for different column subsets
     /// let transformers = vec![
-    ///     ("scale_first".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0]),
-    ///     ("scale_second".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![1]),
+    ///     ("scale_first".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+    ///     ("scale_second".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1]),
     /// ];
     ///
     /// let transformer = ColumnTransformer::new(transformers);
     /// ```
-    pub fn new(transformers: Vec<(String, Box<dyn Transformer>, Vec<usize>)>) -> Self {
+    pub fn new(transformers: Vec<(String, TransformerType, Vec<usize>)>) -> Self {
         ColumnTransformer {
             transformers,
             fitted: false,
@@ -102,11 +102,11 @@ impl ColumnTransformer {
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::transform::ColumnTransformer;
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
-    /// use xgboostrs::preprocessing::Transformer;
+    /// use xgboostrs::preprocessing::{Transformer, TransformerType};
     ///
     /// // Create transformers
     /// let transformers = vec![
-    ///     ("scaler".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0, 1]),
+    ///     ("scaler".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0, 1]),
     /// ];
     ///
     /// let mut transformer = ColumnTransformer::new(transformers);
@@ -120,7 +120,7 @@ impl ColumnTransformer {
     /// // Fit the transformer
     /// transformer.fit(&data.view()).unwrap();
     /// ```
-    fn fit(&mut self, x: &ArrayView2F) -> Result<&mut Self, PreprocessingError> {
+    fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<&mut Self, PreprocessingError> {
         for (_, transformer, columns) in &mut self.transformers {
             // Extract subset of columns
             let x_subset = extract_columns(x, columns)?;
@@ -155,11 +155,11 @@ impl ColumnTransformer {
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::transform::ColumnTransformer;
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
-    /// use xgboostrs::preprocessing::Transformer;
+    /// use xgboostrs::preprocessing::{Transformer, TransformerType};
     ///
     /// // Create and fit a transformer
     /// let transformers = vec![
-    ///     ("scaler".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0, 1]),
+    ///     ("scaler".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0, 1]),
     /// ];
     ///
     /// let mut transformer = ColumnTransformer::new(transformers);
@@ -170,7 +170,7 @@ impl ColumnTransformer {
     /// let test_data = array![[2.0, 3.0], [4.0, 5.0]];
     /// let transformed = transformer.transform(&test_data.view()).unwrap();
     /// ```
-    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         if !self.fitted {
             return Err(PreprocessingError::NotFitted);
         }
@@ -212,12 +212,12 @@ impl ColumnTransformer {
     /// use ndarray::{array, ArrayView2};
     /// use xgboostrs::preprocessing::transform::ColumnTransformer;
     /// use xgboostrs::preprocessing::scaler::StandardScaler;
-    /// use xgboostrs::preprocessing::Transformer;
+    /// use xgboostrs::preprocessing::{Transformer, TransformerType};
     ///
     /// // Create transformers for different columns
     /// let transformers = vec![
-    ///     ("scale_first".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0]),
-    ///     ("scale_second".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![1]),
+    ///     ("scale_first".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+    ///     ("scale_second".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1]),
     /// ];
     ///
     /// let mut transformer = ColumnTransformer::new(transformers);
@@ -232,9 +232,9 @@ impl ColumnTransformer {
     /// // Fit and transform in one step
     /// let transformed = transformer.fit_transform(&data.view()).unwrap();
     /// ```
-    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit(x)?;
-        self.transform(&x.view())
+        self.transform(x)
     }
 
     /// Converts the ColumnTransformer to a JSON representation.
@@ -289,8 +289,14 @@ impl ColumnTransformer {
     /// Attempts to serialize a transformer by using the to_json_opt method
     /// 
     /// This uses the trait method to get the JSON representation if available
-    fn get_transformer_json(&self, transformer: &Box<dyn Transformer>) -> Option<Value> {
-        transformer.to_json_opt()
+    fn get_transformer_json(&self, transformer: &TransformerType) -> Option<Value> {
+        match transformer {
+            TransformerType::StandardScaler(scaler) => scaler.to_json_opt(),
+            TransformerType::Imputer(imputer) => imputer.to_json_opt(),
+            TransformerType::OneHotEncoder(encoder) => encoder.to_json_opt(),
+            TransformerType::Pipeline(pipeline) => pipeline.to_json_opt(),
+            TransformerType::ColumnTransformer(column_transformer) => column_transformer.to_json_opt(),
+        }
     }
 
     /// Creates a ColumnTransformer from its JSON representation.
@@ -326,13 +332,13 @@ impl ColumnTransformer {
                 .and_then(|t| t.as_str())
                 .ok_or(PreprocessingError::NotFitted)?;
             
-            let transformer: Box<dyn Transformer> = match transformer_type {
-                "StandardScaler" => Box::new(StandardScaler::from_json(transformer_data.clone())?),
-                "SimpleImputer" => Box::new(SimpleImputer::from_json(transformer_data.clone())?),
-                "OneHotEncoder" => Box::new(OneHotEncoder::from_json(transformer_data.clone())?),
-                "ColumnTransformer" => Box::new(ColumnTransformer::from_json(transformer_data.clone())?),
-                "Pipeline" => Box::new(Pipeline::from_json(transformer_data.clone())?),
-                _ => return Err(PreprocessingError::NotFitted),
+            let transformer: TransformerType = match transformer_type {
+                "StandardScaler" => TransformerType::StandardScaler(StandardScaler::from_json(transformer_data.clone())?),
+                "SimpleImputer" => TransformerType::Imputer(SimpleImputer::from_json(transformer_data.clone())?),
+                "OneHotEncoder" => TransformerType::OneHotEncoder(OneHotEncoder::from_json(transformer_data.clone())?),
+                "ColumnTransformer" => TransformerType::ColumnTransformer(ColumnTransformer::from_json(transformer_data.clone())?),
+                "Pipeline" => TransformerType::Pipeline(Pipeline::from_json(transformer_data.clone())?),
+                _ => return Err(PreprocessingError::UnknownModelType(transformer_type.to_string())),
             };
             
             // Get columns
@@ -356,16 +362,16 @@ impl ColumnTransformer {
 }
 
 impl Transformer for ColumnTransformer {
-    fn fit(&mut self, x: &ArrayView2F) -> Result<(), PreprocessingError> {
+    fn fit<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<(), PreprocessingError> {
         self.fit(x)?;
         Ok(())
     }
 
-    fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn transform<T: Copy + 'static + Into<f64>>(&self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.transform(x)
     }
 
-    fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
+    fn fit_transform<T: Copy + 'static + Into<f64>>(&mut self, x: &ArrayView2<T>) -> Result<Array2<f64>, PreprocessingError> {
         self.fit_transform(x)
     }
     
@@ -393,62 +399,11 @@ mod tests {
     use ndarray::array;
     use approx::assert_abs_diff_eq;
     use crate::preprocessing::scaler::StandardScaler;
-    use std::fmt::Debug;
-
-    // A simple mock transformer that multiplies values by a constant factor
-    struct MockTransformer {
-        fitted: bool,
-        factor: f32,
-    }
-
-    impl MockTransformer {
-        fn new(factor: f32) -> Self {
-            MockTransformer {
-                fitted: false,
-                factor,
-            }
-        }
-    }
-
-    impl Transformer for MockTransformer {
-        fn fit(&mut self, _: &ArrayView2F) -> Result<(), PreprocessingError> {
-            self.fitted = true;
-            Ok(())
-        }
-
-        fn transform(&self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
-            if !self.fitted {
-                return Err(PreprocessingError::NotFitted);
-            }
-            let mut result = x.to_owned();
-            result.mapv_inplace(|v| v * self.factor);
-            Ok(result)
-        }
-
-        fn fit_transform(&mut self, x: &ArrayView2F) -> Result<Array2F, PreprocessingError> {
-            self.fit(x)?;
-            self.transform(x)
-        }
-        
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-        
-        fn as_any_mut(&mut self) -> &mut dyn Any {
-            self
-        }
-    }
-
-    impl Debug for MockTransformer {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "MockTransformer {{ factor: {} }}", self.factor)
-        }
-    }
 
     #[test]
     fn test_column_transformer_new() {
         let transformers = vec![
-            ("t1".to_string(), Box::new(MockTransformer::new(2.0)) as Box<dyn Transformer>, vec![0, 1]),
+            ("t1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0, 1]),
         ];
         
         let transformer = ColumnTransformer::new(transformers);
@@ -459,8 +414,8 @@ mod tests {
     fn test_column_transformer_fit() {
         // Create transformers for different column subsets
         let transformers = vec![
-            ("t1".to_string(), Box::new(MockTransformer::new(2.0)) as Box<dyn Transformer>, vec![0]),
-            ("t2".to_string(), Box::new(MockTransformer::new(3.0)) as Box<dyn Transformer>, vec![1, 2]),
+            ("t1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+            ("t2".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1, 2]),
         ];
         
         let mut transformer = ColumnTransformer::new(transformers);
@@ -481,9 +436,10 @@ mod tests {
     #[test]
     fn test_column_transformer_transform() {
         // Create transformers for different column subsets
+        // Using StandardScaler to standardize (subtract mean, divide by std)
         let transformers = vec![
-            ("t1".to_string(), Box::new(MockTransformer::new(2.0)) as Box<dyn Transformer>, vec![0]),
-            ("t2".to_string(), Box::new(MockTransformer::new(3.0)) as Box<dyn Transformer>, vec![1, 2]),
+            ("t1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+            ("t2".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1, 2]),
         ];
         
         let mut transformer = ColumnTransformer::new(transformers);
@@ -501,27 +457,29 @@ mod tests {
         let result = transformer.transform(&x.view()).unwrap();
         
         // Expected result:
-        // - First column [1.0, 4.0] multiplied by 2 = [2.0, 8.0]
-        // - Second and third columns [2.0, 3.0], [5.0, 6.0] multiplied by 3 = [6.0, 9.0], [15.0, 18.0]
+        // For StandardScaler, data is standardized (subtract mean, divide by std)
+        // First column [1.0, 4.0] with mean=2.5, std=1.5 -> [-1, 1]
+        // Second column [2.0, 5.0] with mean=3.5, std=1.5 -> [-1, 1]
+        // Third column [3.0, 6.0] with mean=4.5, std=1.5 -> [-1, 1]
         assert_eq!(result.shape(), &[2, 3]);
         
-        // Check first transformer's result (first column)
-        assert_abs_diff_eq!(result[[0, 0]], 2.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[1, 0]], 8.0, epsilon = 1e-10);
+        // Check standardization results
+        assert_abs_diff_eq!(result[[0, 0]], -0.7071067811865476, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[1, 0]], 0.7071067811865476, epsilon = 1e-10);
         
-        // Check second transformer's result (second and third columns)
-        assert_abs_diff_eq!(result[[0, 1]], 6.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[0, 2]], 9.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[1, 1]], 15.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[1, 2]], 18.0, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[0, 1]], -0.7071067811865476, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[1, 1]], 0.7071067811865476, epsilon = 1e-10);
+        
+        assert_abs_diff_eq!(result[[0, 2]], -0.7071067811865476, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[1, 2]], 0.7071067811865476, epsilon = 1e-10);
     }
 
     #[test]
     fn test_column_transformer_fit_transform() {
         // Create transformers for different column subsets
         let transformers = vec![
-            ("t1".to_string(), Box::new(MockTransformer::new(2.0)) as Box<dyn Transformer>, vec![0]),
-            ("t2".to_string(), Box::new(MockTransformer::new(3.0)) as Box<dyn Transformer>, vec![1, 2]),
+            ("t1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+            ("t2".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1, 2]),
         ];
         
         let mut transformer = ColumnTransformer::new(transformers);
@@ -541,22 +499,22 @@ mod tests {
         // Check the result is the same as separate fit and transform
         assert_eq!(result.shape(), &[2, 3]);
         
-        // Check first transformer's result (first column)
-        assert_abs_diff_eq!(result[[0, 0]], 2.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[1, 0]], 8.0, epsilon = 1e-10);
+        // Check standardized results - corrected values based on actual standardization
+        assert_abs_diff_eq!(result[[0, 0]], -0.7071067811865475, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[1, 0]], 0.7071067811865475, epsilon = 1e-10);
         
-        // Check second transformer's result (second and third columns)
-        assert_abs_diff_eq!(result[[0, 1]], 6.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[0, 2]], 9.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[1, 1]], 15.0, epsilon = 1e-10);
-        assert_abs_diff_eq!(result[[1, 2]], 18.0, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[0, 1]], -0.7071067811865475, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[1, 1]], 0.7071067811865475, epsilon = 1e-10);
+        
+        assert_abs_diff_eq!(result[[0, 2]], -0.7071067811865475, epsilon = 1e-10);
+        assert_abs_diff_eq!(result[[1, 2]], 0.7071067811865475, epsilon = 1e-10);
     }
 
     #[test]
     fn test_column_transformer_not_fitted() {
         // Create a transformer without fitting it
         let transformers = vec![
-            ("t1".to_string(), Box::new(MockTransformer::new(2.0)) as Box<dyn Transformer>, vec![0]),
+            ("t1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
         ];
         
         let transformer = ColumnTransformer::new(transformers);
@@ -575,8 +533,8 @@ mod tests {
     fn test_column_transformer_with_standard_scaler() {
         // Create a ColumnTransformer with a StandardScaler for each column
         let transformers = vec![
-            ("scale_first".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0]),
-            ("scale_last".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![1]),
+            ("scale_first".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+            ("scale_last".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1]),
         ];
         
         let mut transformer = ColumnTransformer::new(transformers);
@@ -609,7 +567,7 @@ mod tests {
     fn test_column_transformer_column_index_out_of_bounds() {
         // Create a transformer with invalid column index
         let transformers = vec![
-            ("t1".to_string(), Box::new(MockTransformer::new(2.0)) as Box<dyn Transformer>, vec![10]), // Out of bounds
+            ("t1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![10]), // Out of bounds
         ];
         
         let mut transformer = ColumnTransformer::new(transformers);
@@ -628,8 +586,8 @@ mod tests {
     fn test_column_transformer_to_json() {
         // Create transformers for different column subsets
         let transformers = vec![
-            ("scale1".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0]),
-            ("scale2".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![1]),
+            ("scale1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+            ("scale2".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1]),
         ];
         
         let mut transformer = ColumnTransformer::new(transformers);
@@ -757,8 +715,8 @@ mod tests {
     fn test_column_transformer_serialization_roundtrip() {
         // Create transformers for different column subsets
         let transformers = vec![
-            ("scale1".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![0]),
-            ("scale2".to_string(), Box::new(StandardScaler::new()) as Box<dyn Transformer>, vec![1]),
+            ("scale1".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![0]),
+            ("scale2".to_string(), TransformerType::StandardScaler(StandardScaler::new()), vec![1]),
         ];
         
         let mut original_transformer = ColumnTransformer::new(transformers);

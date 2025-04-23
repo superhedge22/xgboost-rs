@@ -27,6 +27,8 @@ pub enum PreprocessingError {
     NoPredict,
     #[error("IO error: {0}")]
     IoError(String),
+    #[error("Model is of type {0}, but we don't know how to handle it")]
+    UnknownModelType(String),
 }
 
 /// Convenience return type for most operations which can return an `XGBError`.
