@@ -1005,6 +1005,10 @@ impl Predict for Booster {
         // Call the Booster's predict method with the DMatrix
         self.predict(&dmat)
     }
+
+    fn clone_box(&self) -> Box<dyn Predict> {
+        Box::new(self.clone())
+    }
 }
 
 /// Maps a feature index to a name and type, used when dumping models as text.

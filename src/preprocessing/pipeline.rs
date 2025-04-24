@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::fmt;
 use serde_json::{json, Value};
 use std::any::Any;
 
 use crate::{error::PreprocessingError, Predict, XGBError};
-use crate::types::{Array2, Array2F, ArrayView2, ArrayView2F};
+use crate::types::{Array2, ArrayView2};
 
 use super::{Transformer, TransformerType};
 use super::scaler::StandardScaler;
@@ -47,6 +48,7 @@ use super::transform::ColumnTransformer;
 /// // Fit and transform the data
 /// let transformed = pipeline.fit_transform(&data.view()).unwrap();
 /// ```
+#[derive(Clone)]
 pub struct Pipeline {
     /// Ordered sequence of named transformers that make up the pipeline
     steps: Vec<(String, TransformerType)>,
@@ -56,6 +58,18 @@ pub struct Pipeline {
     predict: Option<Box<dyn Predict>>,
     /// Whether the pipeline has been fitted
     fitted: bool,
+}
+
+impl fmt::Debug for Pipeline {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Pipeline: Steps: {:?}, Named Steps: {:?}, Fitted: {:?}", self.steps, self.named_steps, self.fitted)
+    }
+}
+
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        self.steps == other.steps && self.named_steps == other.named_steps && self.fitted == other.fitted
+    }
 }
 
 impl Pipeline {
@@ -637,6 +651,7 @@ impl Transformer for Pipeline {
 mod tests {
     use super::*;
     use crate::error::PreprocessingError;
+    use crate::types::{Array2F, ArrayView2F};
     use ndarray::array;
     use std::fmt::Debug;
     use std::path::Path;
@@ -660,6 +675,10 @@ mod tests {
             let mut result = x.to_owned();
             result.mapv_inplace(|v| v * self.factor);
             Ok(result)
+        }
+
+        fn clone_box(&self) -> Box<dyn Predict> {
+            todo!()
         }
     }
 

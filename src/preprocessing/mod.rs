@@ -14,6 +14,7 @@ pub mod encoder;
 pub mod transform;
 pub mod pipeline;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum TransformerType {
     Imputer(SimpleImputer),
     StandardScaler(StandardScaler),

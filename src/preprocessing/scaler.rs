@@ -2,8 +2,6 @@ use crate::{error::PreprocessingError, types::{Array1, Array2, ArrayView2}};
 use ndarray::Axis;
 use serde_json::{json, Value};
 use std::any::Any;
-
-use crate::types::{Array1F, Array2F, ArrayView2F};
 use super::Transformer;
 
 /// StandardScaler standardizes features by removing the mean and scaling to unit variance.
@@ -25,6 +23,7 @@ use super::Transformer;
 /// // Fit and transform the data
 /// let scaled_data = scaler.fit_transform(&data.view()).unwrap();
 /// ```
+#[derive(Debug, Clone, PartialEq)]
 pub struct StandardScaler {
     /// The mean of each feature, computed during fitting
     mean: Option<Array1<f64>>,

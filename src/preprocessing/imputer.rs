@@ -5,7 +5,7 @@ use ndarray::s;
 use serde_json::{json, Value};
 
 use crate::{error::PreprocessingError, parameters::preprocessing::ImputationStrategy};
-use crate::types::{Array1, Array1F, Array2, Array2F, ArrayView2, ArrayView2F};
+use crate::types::{Array1, Array2, ArrayView2};
 
 use super::Transformer;
 
@@ -32,6 +32,7 @@ use super::Transformer;
 /// // Fit and transform the data
 /// let result = imputer.fit_transform(&data.view(), None).unwrap();
 /// ```
+#[derive(Debug, Clone, PartialEq)]
 pub struct SimpleImputer {
     /// The imputation strategy to use for missing values
     strategy: ImputationStrategy,

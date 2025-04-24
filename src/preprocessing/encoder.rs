@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::any::Any;
 
 use crate::{error::PreprocessingError, parameters::preprocessing::HandleUnknown};
-use crate::types::{Array1, Array1F, Array2, Array2F, ArrayView2, ArrayView2F};
+use crate::types::{Array1, Array2, ArrayView2};
 
 use super::Transformer;
 
@@ -16,6 +16,9 @@ use super::Transformer;
 /// * `handle_unknown` - Strategy for handling unknown categories during transform
 /// * `categories` - Learned categories for each feature (available after fitting)
 /// * `feature_names_in` - Optional names of the input features
+/// 
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct OneHotEncoder {
     handle_unknown: HandleUnknown,
     categories: Option<Vec<Array1<f64>>>,

@@ -42,6 +42,7 @@ use super::encoder::OneHotEncoder;
 /// // Fit and transform the data
 /// let transformed = transformer.fit_transform(&data.view()).unwrap();
 /// ```
+#[derive(Debug, Clone, PartialEq)]
 pub struct ColumnTransformer {
     transformers: Vec<(String, TransformerType, Vec<usize>)>,
     fitted: bool,

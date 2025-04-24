@@ -7,8 +7,6 @@ use serde_json::json;
 use crate::error::XGBResult;
 use crate::error::XGBError;
 use crate::types::ArrayView2F;
-use crate::types::Array2F;
-use ndarray::{Array, ShapeBuilder};
 
 static KEY_GROUP_PTR: &str = "group_ptr";
 static KEY_GROUP: &str = "group";
@@ -530,6 +528,11 @@ impl Drop for DMatrix {
 
 #[cfg(test)]
 mod tests {
+    use ndarray::Array;
+
+    use crate::types::Array2F;
+    use ndarray::ShapeBuilder;
+
     use super::*;
 
     fn read_train_matrix() -> XGBResult<DMatrix> {

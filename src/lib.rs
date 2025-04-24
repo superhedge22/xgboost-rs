@@ -13,7 +13,15 @@ extern crate xgboost_rs_sys;
 
 pub trait Predict {
     fn predict(&self, x: &ArrayView2<f32>) -> Result<Array2<f32>, XGBError>;
+    fn clone_box(&self) -> Box<dyn Predict>;
 }
+
+impl Clone for Box<dyn Predict> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 
 macro_rules! xgb_call {
     ($x:expr) => {
