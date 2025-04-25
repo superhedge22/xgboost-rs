@@ -146,14 +146,14 @@ impl Booster {
         let json_config = json!({ "format": format.as_str() });
         let json_config_cstr = ffi::CString::new(json_config.to_string())?;
         let mut out_len: u64 = 0;
-        let mut out_buffer_string: *const i8 = ptr::null();
-        let out_buffer_ptr: *mut *const i8 = &mut out_buffer_string;
+        let mut out_buffer_string: *const std::os::raw::c_char = ptr::null(); // lets see if this satisfies 
+        // arm64 linux to compile
 
         xgb_call!(xgboost_rs_sys::XGBoosterSaveModelToBuffer(
             self.handle,
             json_config_cstr.as_ptr(),
             &mut out_len,
-            out_buffer_ptr
+            &mut out_buffer_string
         ))?;
 
         let slice: &[u8] =
